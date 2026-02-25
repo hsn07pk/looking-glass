@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+models/
+data/qdrant_storage/
+data/videos/raw/
+.env
+node_modules/
+frontend/dist/
+.checkpoints/*.json
+LOGS/*.log
+SYSTEM.json
