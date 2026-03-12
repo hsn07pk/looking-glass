@@ -11,7 +11,7 @@ dependencies = [
     "qdrant-client>=1.12",
     "ultralytics>=8.3",
     "supervision>=0.25",
-    "transformers>=4.46",
+    "transformers>=4.46,<5",
     "torch>=2.4",
     "torchvision>=0.19",
     "accelerate>=1.0",
@@ -31,6 +31,7 @@ dependencies = [
     "rich>=13",
     "loguru>=0.7",
     "httpx>=0.27",
+    "clip",
 ]
 
 [project.optional-dependencies]
@@ -47,3 +48,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/looking_glass"]
+
+[tool.uv.sources]
+clip = { git = "https://github.com/openai/CLIP.git" }
