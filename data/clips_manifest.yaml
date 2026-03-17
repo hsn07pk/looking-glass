@@ -1,0 +1,26 @@
+clips:
+- camera_id: cam01
+  description: cam01_street_truck
+  file: cam01_street_truck.mp4
+- camera_id: cam02
+  description: cam02_indoor_bag
+  file: cam02_indoor_bag.mp4
+- camera_id: cam03
+  description: cam03_office_handshake
+  file: cam03_office_handshake.mp4
+- camera_id: cam04
+  description: cam04_lobby_traffic
+  file: cam04_lobby_traffic.mp4
+- camera_id: cam05
+  description: cam05_tourist_photo
+  file: cam05_tourist_photo.mp4
+- camera_id: cam06
+  description: cam06_intersection_car
+  file: cam06_intersection_car.mp4
+- camera_id: cam07
+  description: cam07_crowd_jacket
+  file: cam07_crowd_jacket.mp4
+- camera_id: cam08
+  description: cam08_doorstep_package
+  file: cam08_doorstep_package.mp4
+count: 8
