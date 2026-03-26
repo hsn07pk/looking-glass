@@ -1,0 +1,34 @@
+queries:
+  - id: q_truck
+    nl: "orange construction truck"
+    expected_camera: cam01
+    category: nl_search
+    notes: "Headline jury query — must hit"
+  - id: q_bag
+    nl: "bag left unattended on the floor"
+    expected_camera: cam02
+    category: nl_search
+  - id: q_photo
+    nl: "person taking a photo with a phone"
+    expected_camera: cam05
+    category: alert
+  - id: q_lobby
+    nl: "how many people walked through the lobby today"
+    expected_camera: cam04
+    category: analytics
+  - id: q_red_car
+    nl: "red car turning at the intersection"
+    expected_camera: cam06
+    category: nl_search
+  - id: q_yellow_jacket
+    nl: "person wearing a yellow jacket"
+    expected_camera: cam07
+    category: nl_search
+  - id: q_delivery
+    nl: "package on the doorstep"
+    expected_camera: cam08
+    category: nl_search
+  - id: q_handshake
+    nl: "two people shaking hands"
+    expected_camera: cam03
+    category: nl_search

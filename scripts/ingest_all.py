@@ -14,9 +14,10 @@ from looking_glass.sources.file_source import FileVideoSource
 
 
 def main(mock: bool = False) -> None:
+    from looking_glass.ingestion.pipeline import IngestionPipeline
+
     if mock:
         from looking_glass.ingestion.pipeline import (
-            IngestionPipeline,
             MockCaptioner,
             MockDetector,
             MockEmbedder,
