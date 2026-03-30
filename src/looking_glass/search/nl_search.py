@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-import numpy as np
-
 from looking_glass.models.embedder import FrameEmbedder
 from looking_glass.store.vector_store import QdrantStore
 

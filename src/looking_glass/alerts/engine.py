@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import sqlite3
 import time
 import uuid
 from dataclasses import dataclass, field
 
 import numpy as np
 import numpy.typing as npt
-
-from looking_glass.config import DATA_DIR
 
 
 @dataclass
