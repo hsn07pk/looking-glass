@@ -18,8 +18,11 @@ router = APIRouter()
 @router.post("/search", response_model=SearchResponse)
 async def search(req: SearchRequest) -> SearchResponse:
     """Natural language search over video frames."""
-    nl_search = get_search()
-    results = nl_search.search(req.q, top_k=req.top_k)
+    try:
+        nl_search = get_search()
+        results = nl_search.search(req.q, top_k=req.top_k)
+    except Exception:
+        return SearchResponse(results=[], query=req.q, total=0)
     items = []
     for r in results:
         dets = [

@@ -1,18 +1,17 @@
-"""Ingestion pipeline — orchestrates Source → Sampler → Detector → Tracker → Embedder → Captioner → Store."""
+"""Ingestion pipeline — orchestrates the full video processing chain."""
 
 from __future__ import annotations
 
 import json
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
 import numpy as np
 import numpy.typing as npt
 
-from looking_glass.config import DATA_DIR, ROOT_DIR
+from looking_glass.config import DATA_DIR
 from looking_glass.sources.base import Frame
 
 
@@ -36,8 +35,12 @@ class Captioner(Protocol):
 
 
 class VectorStore(Protocol):
-    def upsert_frame(self, frame_id: str, vector: npt.NDArray[np.float32], payload: dict) -> None: ...
-    def upsert_crop(self, crop_id: str, vector: npt.NDArray[np.float32], payload: dict) -> None: ...
+    def upsert_frame(
+        self, frame_id: str, vector: npt.NDArray[np.float32], payload: dict
+    ) -> None: ...
+    def upsert_crop(
+        self, crop_id: str, vector: npt.NDArray[np.float32], payload: dict
+    ) -> None: ...
 
 
 class MockDetector:
@@ -174,16 +177,40 @@ class IngestionPipeline:
                 tid = t.get("track_id", 0)
                 stats["tracks"].add(tid)
                 # SQLite
+                sql_tracks = (
+                    "INSERT OR REPLACE INTO tracks"
+                    " (track_id, camera_id, class_name,"
+                    " first_seen, last_seen, frame_count)"
+                    " VALUES (?, ?, ?, ?, ?,"
+                    " COALESCE((SELECT frame_count FROM tracks"
+                    " WHERE track_id=? AND camera_id=?), 0)+1)"
+                )
                 conn.execute(
-                    "INSERT OR REPLACE INTO tracks (track_id, camera_id, class_name, first_seen, last_seen, frame_count) "
-                    "VALUES (?, ?, ?, ?, ?, COALESCE((SELECT frame_count FROM tracks WHERE track_id=? AND camera_id=?), 0) + 1)",
-                    (tid, camera_id, t.get("class_name", ""), frame.timestamp, frame.timestamp, tid, camera_id),
+                    sql_tracks,
+                    (
+                        tid, camera_id,
+                        t.get("class_name", ""),
+                        frame.timestamp, frame.timestamp,
+                        tid, camera_id,
+                    ),
                 )
                 bbox = t.get("bbox", (0, 0, 0, 0))
+                sql_dets = (
+                    "INSERT INTO detections"
+                    " (track_id, camera_id, timestamp,"
+                    " x1, y1, x2, y2,"
+                    " class_name, score, frame_path)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                )
                 conn.execute(
-                    "INSERT INTO detections (track_id, camera_id, timestamp, x1, y1, x2, y2, class_name, score, frame_path) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (tid, camera_id, frame.timestamp, *bbox, t.get("class_name", ""), t.get("score", 0.0), str(frame_path)),
+                    sql_dets,
+                    (
+                        tid, camera_id, frame.timestamp,
+                        *bbox,
+                        t.get("class_name", ""),
+                        t.get("score", 0.0),
+                        str(frame_path),
+                    ),
                 )
 
             # Embed frame
@@ -194,7 +221,12 @@ class IngestionPipeline:
                 "frame_idx": frame.frame_idx,
                 "frame_path": str(frame_path),
                 "detections": json.dumps([
-                    {"bbox": t.get("bbox"), "class": t.get("class_name"), "score": t.get("score"), "track_id": t.get("track_id")}
+                    {
+                        "bbox": t.get("bbox"),
+                        "class": t.get("class_name"),
+                        "score": t.get("score"),
+                        "track_id": t.get("track_id"),
+                    }
                     for t in tracked
                 ]),
             })
@@ -231,7 +263,12 @@ class IngestionPipeline:
                 "frame_path": str(frame_path),
                 "caption": cap,
                 "detections": json.dumps([
-                    {"bbox": t.get("bbox"), "class": t.get("class_name"), "score": t.get("score"), "track_id": t.get("track_id")}
+                    {
+                        "bbox": t.get("bbox"),
+                        "class": t.get("class_name"),
+                        "score": t.get("score"),
+                        "track_id": t.get("track_id"),
+                    }
                     for t in tracked
                 ]),
             })

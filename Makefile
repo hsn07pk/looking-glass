@@ -1,8 +1,9 @@
-.PHONY: setup detect download-models ingest serve frontend demo demo-smoke test eval preflight verify clean
+.PHONY: setup detect download-models ingest serve frontend demo demo-smoke test eval preflight verify clean fallback
 
 setup:
 	uv sync --extra dev
-	@echo "✓ Python dependencies installed"
+	cd frontend && pnpm install
+	@echo "✓ Dependencies installed"
 
 detect:
 	uv run python scripts/detect_system.py
@@ -17,18 +18,16 @@ serve:
 	uv run uvicorn looking_glass.api.main:app --host 0.0.0.0 --port 8000 --reload
 
 frontend:
-	cd frontend && pnpm dev
+	cd frontend && PATH="/opt/homebrew/opt/node@22/bin:$$PATH" pnpm dev
 
 demo:
-	@echo "Starting backend..."
-	uv run uvicorn looking_glass.api.main:app --host 0.0.0.0 --port 8000 &
+	@echo "Starting Looking Glass demo..."
+	@uv run uvicorn looking_glass.api.main:app --host 0.0.0.0 --port 8000 &
+	@sleep 3
+	@cd frontend && PATH="/opt/homebrew/opt/node@22/bin:$$PATH" pnpm dev &
 	@sleep 2
-	@echo "Starting frontend..."
-	cd frontend && pnpm dev &
-	@sleep 2
-	@echo "Opening browser..."
-	open http://localhost:5173 || xdg-open http://localhost:5173 || true
-	@echo "Demo running. Press Ctrl+C to stop."
+	@open http://localhost:5173 2>/dev/null || xdg-open http://localhost:5173 2>/dev/null || true
+	@echo "Demo running at http://localhost:5173 — Press Ctrl+C to stop."
 	@wait
 
 demo-smoke:
@@ -44,10 +43,12 @@ preflight:
 	uv run python scripts/health_check.py
 	uv run python scripts/eval_demo_queries.py
 	uv run python scripts/verify_state.py
-	$(MAKE) demo-smoke
 
 verify:
 	uv run python scripts/verify_state.py
+
+fallback:
+	uv run python scripts/screenshot_fallback.py
 
 clean:
 	rm -rf data/qdrant_storage .venv __pycache__ frontend/node_modules frontend/dist

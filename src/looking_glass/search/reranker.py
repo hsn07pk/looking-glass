@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import cv2
-import numpy as np
 
 from looking_glass.models.captioner import DenseCaptioner
 from looking_glass.search.nl_search import SearchResult
