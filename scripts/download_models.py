@@ -24,7 +24,7 @@ def main() -> None:
     print("\n=== Downloading Florence-2 ===")
     from transformers import AutoModelForCausalLM, AutoProcessor
     AutoProcessor.from_pretrained("microsoft/Florence-2-base", trust_remote_code=True)
-    AutoModelForCausalLM.from_pretrained("microsoft/Florence-2-base", trust_remote_code=True)
+    AutoModelForCausalLM.from_pretrained("microsoft/Florence-2-base", trust_remote_code=True, attn_implementation="eager")
     print("Florence-2: OK")
 
     print("\n=== Pulling Ollama model ===")

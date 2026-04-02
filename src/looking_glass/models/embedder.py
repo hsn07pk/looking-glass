@@ -33,6 +33,8 @@ class FrameEmbedder:
     _tokenizer: Callable | None = field(default=None, repr=False)  # type: ignore[type-arg]
     _dim: int = field(default=0, repr=False)
     _device: str = field(default="", repr=False)
+    _logit_scale: float = field(default=1.0, repr=False)
+    _logit_bias: float = field(default=0.0, repr=False)
 
     def __post_init__(self) -> None:
         self._device = _device()
@@ -45,8 +47,15 @@ class FrameEmbedder:
         self._model.eval()
         self._preprocess = preprocess
         self._tokenizer = open_clip.get_tokenizer(self.model_name)
-        # Determine embedding dim from a dummy forward pass
         self._dim = 768  # SigLIP B/16 is always 768
+
+        # Extract learned SigLIP temperature and bias for proper scoring.
+        # SigLIP computes: logits = cosine_sim * exp(logit_scale) + logit_bias
+        # then: probability = sigmoid(logits)
+        if hasattr(model, 'logit_scale'):
+            self._logit_scale = float(model.logit_scale.exp().item())
+        if hasattr(model, 'logit_bias'):
+            self._logit_bias = float(model.logit_bias.item())
 
     def encode_image(self, image: npt.NDArray[np.uint8]) -> npt.NDArray[np.float32]:
         """Encode a BGR/RGB numpy image to a unit-norm embedding vector."""
@@ -79,6 +88,15 @@ class FrameEmbedder:
             features = F.normalize(features, dim=-1)
 
         return features[0].cpu().numpy().astype(np.float32)
+
+    def cosine_to_probability(self, cosine_sim: float) -> float:
+        """Convert raw cosine similarity to SigLIP probability using learned params.
+
+        SigLIP uses: prob = sigmoid(cosine_sim * temperature + bias)
+        This gives meaningful 0-1 probabilities instead of raw cosine scores.
+        """
+        logit = cosine_sim * self._logit_scale + self._logit_bias
+        return 1.0 / (1.0 + np.exp(-logit))
 
     def dim(self) -> int:
         """Return embedding dimensionality (768 for SigLIP B/16)."""

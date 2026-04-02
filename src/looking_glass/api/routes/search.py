@@ -25,17 +25,29 @@ async def search(req: SearchRequest) -> SearchResponse:
     except Exception as exc:
         logger.error(f"Search failed for query '{req.q}': {exc}")
         return SearchResponse(results=[], query=req.q, total=0)
+    # Filter noisy detections for clean display
+    _NOISY_CLASSES = {"phone", "smartphone", "camera"}
+    _NOISY_LABELS = {
+        "one hand", "his hands", "her hands", "their hands", "hand", "hands",
+        "the table", "a table", "table", "ceiling", "wall", "floor",
+        "The office", "office", "object", "objects", "various objects",
+    }
+
     items = []
     for r in results:
         dets = [
             Detection(
                 bbox=d.get("bbox") or d.get("bboxes"),
-                class_name=d.get("class", d.get("class_name", "")),
+                class_name=d.get("class_name", d.get("class", "")),
                 score=d.get("score", 0.0),
                 track_id=d.get("track_id"),
             )
             for d in (r.detections or [])
+            if d.get("class_name", d.get("class", "")) not in _NOISY_CLASSES
+            and d.get("class_name", d.get("class", "")) not in _NOISY_LABELS
         ]
+        # Limit to top 5 detections per frame for clean display
+        dets = dets[:5]
         items.append(SearchResultItem(
             camera_id=r.camera_id,
             timestamp=r.timestamp,

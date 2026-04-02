@@ -44,12 +44,11 @@ def create_app() -> FastAPI:
 
     @app.get("/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
-        from looking_glass.store.vector_store import QdrantStore
+        from looking_glass.api.deps import get_store
 
         try:
-            store = QdrantStore()
+            store = get_store()
             count = store.count("frames")
-            # models_loaded is true only if ingestion has actually run (frames > 0)
             return HealthResponse(
                 ok=count > 0,
                 models_loaded=count > 0,

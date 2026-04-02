@@ -13,40 +13,22 @@ from looking_glass.config import NORMALIZED_DIR
 from looking_glass.sources.file_source import FileVideoSource
 
 
-def main(mock: bool = False) -> None:
+def main() -> None:
     from looking_glass.ingestion.pipeline import IngestionPipeline
+    from looking_glass.models.detector import OpenVocabDetector
+    from looking_glass.models.tracker import MultiObjectTracker
+    from looking_glass.models.embedder import FrameEmbedder
+    from looking_glass.models.captioner import DenseCaptioner
+    from looking_glass.store.vector_store import QdrantStore
 
-    if mock:
-        from looking_glass.ingestion.pipeline import (
-            MockCaptioner,
-            MockDetector,
-            MockEmbedder,
-            MockTracker,
-            MockVectorStore,
-        )
-
-        pipeline = IngestionPipeline(
-            detector=MockDetector(),
-            tracker=MockTracker(),
-            embedder=MockEmbedder(),
-            captioner=MockCaptioner(),
-            store=MockVectorStore(),
-        )
-    else:
-        from looking_glass.models.detector import OpenVocabDetector
-        from looking_glass.models.tracker import MultiObjectTracker
-        from looking_glass.models.embedder import FrameEmbedder
-        from looking_glass.models.captioner import DenseCaptioner
-        from looking_glass.store.vector_store import QdrantStore
-
-        store = QdrantStore()
-        pipeline = IngestionPipeline(
-            detector=OpenVocabDetector(),
-            tracker=MultiObjectTracker(),
-            embedder=FrameEmbedder(),
-            captioner=DenseCaptioner(),
-            store=store,
-        )
+    store = QdrantStore()
+    pipeline = IngestionPipeline(
+        detector=OpenVocabDetector(),
+        tracker=MultiObjectTracker(),
+        embedder=FrameEmbedder(),
+        captioner=DenseCaptioner(),
+        store=store,
+    )
 
     clips = sorted(NORMALIZED_DIR.glob("*.mp4"))
     if not clips:
@@ -70,5 +52,4 @@ def main(mock: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    use_mock = "--mock" in sys.argv
-    main(mock=use_mock)
+    main()

@@ -13,7 +13,6 @@ OPEN_VOCAB_SET = [
     "person", "man", "woman", "child",
     "car", "truck", "construction truck", "dump truck", "van", "bus", "bicycle", "motorcycle",
     "bag", "backpack", "duffel bag", "handbag", "suitcase", "package", "box",
-    "phone", "smartphone", "camera",
     "jacket", "yellow jacket", "high-visibility vest",
     "dog", "cat",
     "door", "window", "entrance",

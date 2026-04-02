@@ -35,7 +35,8 @@ class DenseCaptioner:
         )
         self._model = AutoModelForCausalLM.from_pretrained(
             self.model_id, trust_remote_code=True,
-            torch_dtype=torch.float32,
+            dtype=torch.float32,
+            attn_implementation="eager",
         ).to(self._device)
         self._model.eval()  # type: ignore[union-attr]
 
@@ -53,6 +54,7 @@ class DenseCaptioner:
                 **inputs,
                 max_new_tokens=1024,
                 num_beams=3,
+                use_cache=False,
             )
 
         generated_text = self._processor.batch_decode(
