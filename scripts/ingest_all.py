@@ -58,7 +58,8 @@ def main(mock: bool = False) -> None:
 
     for clip in clips:
         print(f"\nIngesting {clip.name}...")
-        source = FileVideoSource(clip)
+        # sample_fps=2 reads ~2 frames/sec at read time to avoid OOM on 4K video
+        source = FileVideoSource(clip, sample_fps=2.0)
         frames = source.frames()
         stats = pipeline.ingest_frames(source.camera_id(), frames)
         print(f"  {stats['frames_sampled']}/{stats['frames_total']} frames, "

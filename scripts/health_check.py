@@ -39,8 +39,7 @@ def main() -> int:
             print(f"PASS: '{query}' -> {top.camera_id} (score={top.score:.4f})")
             passed += 1
         else:
-            print(f"WARN: '{query}' -> {top.camera_id} (expected {expected_cam}, score={top.score:.4f})")
-            passed += 1  # Count as partial pass for now
+            print(f"MISS: '{query}' -> {top.camera_id} (expected {expected_cam}, score={top.score:.4f})")
 
     print(f"\n{passed}/{len(DEMO_QUERIES)} queries passed")
     return 0 if passed >= 3 else 1

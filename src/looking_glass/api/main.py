@@ -49,7 +49,12 @@ def create_app() -> FastAPI:
         try:
             store = QdrantStore()
             count = store.count("frames")
-            return HealthResponse(ok=True, models_loaded=True, frame_count=count)
+            # models_loaded is true only if ingestion has actually run (frames > 0)
+            return HealthResponse(
+                ok=count > 0,
+                models_loaded=count > 0,
+                frame_count=count,
+            )
         except Exception:
             return HealthResponse(ok=False, models_loaded=False, frame_count=0)
 

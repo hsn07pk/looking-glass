@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
+from loguru import logger
 
 from looking_glass.api.deps import get_search
 from looking_glass.api.schemas import (
@@ -21,7 +22,8 @@ async def search(req: SearchRequest) -> SearchResponse:
     try:
         nl_search = get_search()
         results = nl_search.search(req.q, top_k=req.top_k)
-    except Exception:
+    except Exception as exc:
+        logger.error(f"Search failed for query '{req.q}': {exc}")
         return SearchResponse(results=[], query=req.q, total=0)
     items = []
     for r in results:

@@ -39,6 +39,8 @@ function App() {
   const [chatLoading, setChatLoading] = useState(false)
   const [clock, setClock] = useState(new Date())
   const wsRef = useRef<WebSocket | null>(null)
+  const mainVideoRef = useRef<HTMLVideoElement | null>(null)
+  const [videoDims, setVideoDims] = useState<{ w: number; h: number }>({ w: 1920, h: 1080 })
 
   useEffect(() => {
     const t = setInterval(() => setClock(new Date()), 1000)
@@ -51,7 +53,8 @@ function App() {
 
   useEffect(() => {
     try {
-      const ws = new WebSocket(`ws://localhost:8000/alerts/ws`)
+      const wsHost = window.location.hostname || 'localhost'
+      const ws = new WebSocket(`ws://${wsHost}:8000/alerts/ws`)
       wsRef.current = ws
       ws.onmessage = (e) => {
         const alert = JSON.parse(e.data) as AlertEvent
@@ -171,42 +174,50 @@ function App() {
             ))}
           </div>
 
-          <div className="flex-1 relative rounded-lg overflow-hidden border border-[#2a2a2a] bg-[#141414] scanlines">
+          <div className="flex-1 relative rounded-lg overflow-hidden border border-[#2a2a2a] bg-[#141414] scanlines flex items-center justify-center">
             {selectedCam && (
-              <video
-                key={selectedCam}
-                src={`/videos/${cameras.find(c => c.camera_id === selectedCam)?.clip_name}`}
-                autoPlay loop muted playsInline
-                className="w-full h-full object-contain"
-              />
-            )}
-            {topResult && selectedCam === topResult.camera_id && topResult.detections?.map((det, i) => (
-              det.bbox && (
-                <div
-                  key={i}
-                  className="absolute border-2 border-[#00ff88] bbox-animate"
-                  style={{
-                    left: `${(det.bbox[0] / 1280) * 100}%`,
-                    top: `${(det.bbox[1] / 720) * 100}%`,
-                    width: `${((det.bbox[2] - det.bbox[0]) / 1280) * 100}%`,
-                    height: `${((det.bbox[3] - det.bbox[1]) / 720) * 100}%`,
+              <div className="relative" style={{ aspectRatio: `${videoDims.w} / ${videoDims.h}`, maxWidth: '100%', maxHeight: '100%' }}>
+                <video
+                  ref={mainVideoRef}
+                  key={selectedCam}
+                  src={`/videos/${cameras.find(c => c.camera_id === selectedCam)?.clip_name}`}
+                  autoPlay loop muted playsInline
+                  className="w-full h-full"
+                  onLoadedMetadata={() => {
+                    if (mainVideoRef.current) {
+                      setVideoDims({ w: mainVideoRef.current.videoWidth, h: mainVideoRef.current.videoHeight })
+                    }
                   }}
-                >
-                  <span className="absolute -top-5 left-0 font-mono text-xs bg-[#00ff88] text-black px-1 rounded">
-                    {det.class_name} {(det.score * 100).toFixed(0)}%
-                  </span>
-                </div>
-              )
-            ))}
-            {topResult && selectedCam === topResult.camera_id && (
-              <div className="absolute bottom-4 left-4 bg-black/80 rounded-lg px-4 py-2 font-mono text-sm">
-                <span className="text-[#00ff88]">Match: {(topResult.score * 100).toFixed(1)}%</span>
-                <span className="text-[#888] ml-3">{topResult.camera_id} · {topResult.timestamp.toFixed(1)}s</span>
-              </div>
-            )}
-            {topResult && selectedCam === topResult.camera_id && topResult.caption && (
-              <div className="absolute top-4 left-4 bg-black/80 rounded-lg px-3 py-1 text-xs text-[#888] max-w-md">
-                {topResult.caption}
+                />
+                {topResult && selectedCam === topResult.camera_id && topResult.detections?.map((det, i) => (
+                  det.bbox && (
+                    <div
+                      key={i}
+                      className="absolute border-2 border-[#00ff88] bbox-animate"
+                      style={{
+                        left: `${(det.bbox[0] / videoDims.w) * 100}%`,
+                        top: `${(det.bbox[1] / videoDims.h) * 100}%`,
+                        width: `${((det.bbox[2] - det.bbox[0]) / videoDims.w) * 100}%`,
+                        height: `${((det.bbox[3] - det.bbox[1]) / videoDims.h) * 100}%`,
+                      }}
+                    >
+                      <span className="absolute -top-5 left-0 font-mono text-xs bg-[#00ff88] text-black px-1 rounded">
+                        {det.class_name} {(det.score * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                  )
+                ))}
+                {topResult && selectedCam === topResult.camera_id && (
+                  <div className="absolute bottom-4 left-4 bg-black/80 rounded-lg px-4 py-2 font-mono text-sm">
+                    <span className="text-[#00ff88]">Match: {(topResult.score * 100).toFixed(1)}%</span>
+                    <span className="text-[#888] ml-3">{topResult.camera_id} · {topResult.timestamp.toFixed(1)}s</span>
+                  </div>
+                )}
+                {topResult && selectedCam === topResult.camera_id && topResult.caption && (
+                  <div className="absolute top-4 left-4 bg-black/80 rounded-lg px-3 py-1 text-xs text-[#888] max-w-md">
+                    {topResult.caption}
+                  </div>
+                )}
               </div>
             )}
             {!selectedCam && (

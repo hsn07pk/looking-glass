@@ -19,6 +19,7 @@ async def test_health(client):
         assert r.status_code == 200
         data = r.json()
         assert "ok" in data
+        assert "frame_count" in data
 
 
 @pytest.mark.asyncio
@@ -32,18 +33,20 @@ async def test_cameras(client):
 
 @pytest.mark.asyncio
 async def test_search(client):
-    """Search may fail if Qdrant is locked; verify the endpoint responds."""
+    """Search endpoint must return 200, even if results are empty."""
     async with client as c:
         r = await c.post("/search", json={"q": "truck", "top_k": 3})
-        # Accept both 200 and 500 (Qdrant lock in test env)
-        assert r.status_code in (200, 500)
-        if r.status_code == 200:
-            data = r.json()
-            assert "results" in data
+        assert r.status_code == 200
+        data = r.json()
+        assert "results" in data
+        assert "query" in data
 
 
 @pytest.mark.asyncio
 async def test_analytics(client):
+    """Analytics endpoint must return 200."""
     async with client as c:
         r = await c.post("/analytics/ask", json={"q": "how many objects?"})
-        assert r.status_code in (200, 500)
+        assert r.status_code == 200
+        data = r.json()
+        assert "answer" in data
