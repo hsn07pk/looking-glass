@@ -11,20 +11,20 @@ sys.path.insert(0, str(ROOT / "src"))
 
 
 def main() -> None:
-    print("=== Downloading YOLO-World ===")
-    from ultralytics import YOLO
-    YOLO("yolov8s-worldv2.pt")
+    print("=== Downloading YOLO-World (medium) ===")
+    from ultralytics import YOLOWorld
+    YOLOWorld("yolov8m-worldv2.pt")
     print("YOLO-World: OK")
 
     print("\n=== Downloading SigLIP ===")
     import open_clip
-    open_clip.create_model_and_transforms("ViT-B-16-SigLIP", pretrained="webli")
+    open_clip.create_model_from_pretrained("ViT-B-16-SigLIP", pretrained="webli")
     print("SigLIP: OK")
 
     print("\n=== Downloading Florence-2 ===")
     from transformers import AutoModelForCausalLM, AutoProcessor
     AutoProcessor.from_pretrained("microsoft/Florence-2-base", trust_remote_code=True)
-    AutoModelForCausalLM.from_pretrained("microsoft/Florence-2-base", trust_remote_code=True)
+    AutoModelForCausalLM.from_pretrained("microsoft/Florence-2-base", trust_remote_code=True, attn_implementation="eager")
     print("Florence-2: OK")
 
     print("\n=== Pulling Ollama model ===")

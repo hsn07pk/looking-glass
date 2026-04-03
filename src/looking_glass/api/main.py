@@ -44,12 +44,16 @@ def create_app() -> FastAPI:
 
     @app.get("/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
-        from looking_glass.store.vector_store import QdrantStore
+        from looking_glass.api.deps import get_store
 
         try:
-            store = QdrantStore()
+            store = get_store()
             count = store.count("frames")
-            return HealthResponse(ok=True, models_loaded=True, frame_count=count)
+            return HealthResponse(
+                ok=count > 0,
+                models_loaded=count > 0,
+                frame_count=count,
+            )
         except Exception:
             return HealthResponse(ok=False, models_loaded=False, frame_count=0)
 

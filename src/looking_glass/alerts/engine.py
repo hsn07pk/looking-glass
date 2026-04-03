@@ -16,7 +16,7 @@ class AlertRule:
     id: str
     query: str
     embedding: npt.NDArray[np.float32]
-    threshold: float = 0.25
+    threshold: float = 0.07
     camera_filter: str | None = None
     created_at: float = 0.0
 

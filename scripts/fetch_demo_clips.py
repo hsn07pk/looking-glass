@@ -67,6 +67,13 @@ def generate_clip(
 def main() -> None:
     NORM_DIR.mkdir(parents=True, exist_ok=True)
 
+    # If real clips already exist, skip synthetic generation
+    existing = list(NORM_DIR.glob("*.mp4"))
+    real_clips = [f for f in existing if f.stat().st_size > 1_000_000]  # >1MB = real
+    if len(real_clips) >= 8:
+        print(f"Found {len(real_clips)} real clips in {NORM_DIR} — skipping synthetic generation.")
+        return
+
     clips = [
         ("cam01_street_truck.mp4", (80, 80, 80), [
             {"x": 100, "y": 200, "w": 400, "h": 200, "color": (30, 120, 220), "label": "truck", "dx": 200},

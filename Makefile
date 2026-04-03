@@ -3,7 +3,8 @@
 setup:
 	uv sync --extra dev
 	cd frontend && pnpm install
-	@echo "✓ Dependencies installed"
+	mkdir -p LOGS .checkpoints BENCHMARKS data/frames models
+	@echo "Dependencies installed."
 
 detect:
 	uv run python scripts/detect_system.py
@@ -18,13 +19,13 @@ serve:
 	uv run uvicorn looking_glass.api.main:app --host 0.0.0.0 --port 8000 --reload
 
 frontend:
-	cd frontend && PATH="/opt/homebrew/opt/node@22/bin:$$PATH" pnpm dev
+	cd frontend && pnpm dev
 
 demo:
 	@echo "Starting Looking Glass demo..."
 	@uv run uvicorn looking_glass.api.main:app --host 0.0.0.0 --port 8000 &
 	@sleep 3
-	@cd frontend && PATH="/opt/homebrew/opt/node@22/bin:$$PATH" pnpm dev &
+	@cd frontend && pnpm dev &
 	@sleep 2
 	@open http://localhost:5173 2>/dev/null || xdg-open http://localhost:5173 2>/dev/null || true
 	@echo "Demo running at http://localhost:5173 — Press Ctrl+C to stop."
@@ -51,5 +52,5 @@ fallback:
 	uv run python scripts/screenshot_fallback.py
 
 clean:
-	rm -rf data/qdrant_storage .venv __pycache__ frontend/node_modules frontend/dist
+	rm -rf data/qdrant_storage data/tracks.db data/frames .venv __pycache__ frontend/node_modules frontend/dist
 	find . -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

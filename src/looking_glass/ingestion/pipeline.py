@@ -32,6 +32,8 @@ class Embedder(Protocol):
 
 class Captioner(Protocol):
     def caption(self, image: npt.NDArray[np.uint8]) -> str: ...
+    def exhaustive_caption(self, image: npt.NDArray[np.uint8]) -> str: ...
+    def grounded_detection(self, image: npt.NDArray[np.uint8], text: str) -> list[dict]: ...
 
 
 class VectorStore(Protocol):
@@ -42,53 +44,6 @@ class VectorStore(Protocol):
         self, crop_id: str, vector: npt.NDArray[np.float32], payload: dict
     ) -> None: ...
 
-
-class MockDetector:
-    def detect(self, image: npt.NDArray[np.uint8], classes: list[str]) -> list[dict]:
-        return [{"bbox": (100, 100, 200, 200), "class_name": "person", "score": 0.9}]
-
-
-class MockTracker:
-    _next_id: int = 0
-
-    def update(self, detections: list[dict], frame: npt.NDArray[np.uint8]) -> list[dict]:
-        result = []
-        for d in detections:
-            d["track_id"] = self._next_id
-            self._next_id += 1
-            result.append(d)
-        return result
-
-    def reset(self) -> None:
-        self._next_id = 0
-
-
-class MockEmbedder:
-    def encode_image(self, image: npt.NDArray[np.uint8]) -> npt.NDArray[np.float32]:
-        return np.random.randn(512).astype(np.float32)
-
-    def encode_text(self, text: str) -> npt.NDArray[np.float32]:
-        return np.random.randn(512).astype(np.float32)
-
-    def dim(self) -> int:
-        return 512
-
-
-class MockCaptioner:
-    def caption(self, image: npt.NDArray[np.uint8]) -> str:
-        return "A scene with people and objects."
-
-
-class MockVectorStore:
-    def __init__(self) -> None:
-        self.frames: dict[str, dict] = {}
-        self.crops: dict[str, dict] = {}
-
-    def upsert_frame(self, frame_id: str, vector: npt.NDArray[np.float32], payload: dict) -> None:
-        self.frames[frame_id] = payload
-
-    def upsert_crop(self, crop_id: str, vector: npt.NDArray[np.float32], payload: dict) -> None:
-        self.crops[crop_id] = payload
 
 
 DB_PATH = DATA_DIR / "tracks.db"
@@ -135,9 +90,12 @@ class IngestionPipeline:
     captioner: Captioner
     store: VectorStore
     target_fps: float = 1.0
-    classes: list[str] = field(default_factory=lambda: [
-        "person", "car", "truck", "bag", "phone", "bicycle",
-    ])
+    classes: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.classes:
+            from looking_glass.config import OPEN_VOCAB_SET
+            self.classes = list(OPEN_VOCAB_SET)
 
     def ingest_frames(self, camera_id: str, frames: list[Frame]) -> dict:
         """Run the full pipeline on a list of frames. Returns stats."""
@@ -213,6 +171,43 @@ class IngestionPipeline:
                     ),
                 )
 
+            # Short caption for grounded detection (Florence-2)
+            short_cap = self.captioner.caption(frame.image)
+
+            # Exhaustive caption via Ollama VLM for rich queryable descriptions
+            cap = self.captioner.exhaustive_caption(frame.image)
+            stats["captions"] += 1
+
+            # Florence-2 grounded detection: find bboxes for everything in the caption.
+            # This automatically detects all objects/people/actions without a fixed class list.
+            grounded_dets: list[dict] = []
+            if short_cap:
+                try:
+                    raw_gd = self.captioner.grounded_detection(frame.image, short_cap)
+                    grounded_dets = [
+                        {
+                            "bbox": list(g["bbox"]),
+                            "class_name": g.get("label", ""),
+                            "score": 1.0,  # grounded detections don't have confidence
+                        }
+                        for g in raw_gd
+                        if g.get("bbox")
+                    ]
+                except Exception:
+                    pass  # graceful fallback if grounding fails
+
+            # Merge: YOLO-World tracked detections + Florence-2 grounded detections
+            # YOLO provides tracked objects with IDs; Florence provides caption-grounded bboxes
+            all_detections = [
+                {
+                    "bbox": t.get("bbox"),
+                    "class_name": t.get("class_name"),
+                    "score": t.get("score"),
+                    "track_id": t.get("track_id"),
+                }
+                for t in tracked
+            ] + grounded_dets
+
             # Embed frame
             frame_vec = self.embedder.encode_image(frame.image)
             self.store.upsert_frame(frame_id, frame_vec, {
@@ -220,18 +215,11 @@ class IngestionPipeline:
                 "timestamp": frame.timestamp,
                 "frame_idx": frame.frame_idx,
                 "frame_path": str(frame_path),
-                "detections": json.dumps([
-                    {
-                        "bbox": t.get("bbox"),
-                        "class": t.get("class_name"),
-                        "score": t.get("score"),
-                        "track_id": t.get("track_id"),
-                    }
-                    for t in tracked
-                ]),
+                "caption": cap,
+                "detections": json.dumps(all_detections),
             })
 
-            # Embed crops
+            # Embed crops from tracked objects (YOLO-World)
             for t in tracked:
                 bbox = t.get("bbox", (0, 0, 0, 0))
                 x1, y1, x2, y2 = [int(c) for c in bbox]
@@ -250,28 +238,6 @@ class IngestionPipeline:
                         "class_name": t.get("class_name", ""),
                         "track_id": t.get("track_id", 0),
                     })
-
-            # Caption
-            cap = self.captioner.caption(frame.image)
-            stats["captions"] += 1
-
-            # Update frame payload with caption
-            self.store.upsert_frame(frame_id, frame_vec, {
-                "camera_id": camera_id,
-                "timestamp": frame.timestamp,
-                "frame_idx": frame.frame_idx,
-                "frame_path": str(frame_path),
-                "caption": cap,
-                "detections": json.dumps([
-                    {
-                        "bbox": t.get("bbox"),
-                        "class": t.get("class_name"),
-                        "score": t.get("score"),
-                        "track_id": t.get("track_id"),
-                    }
-                    for t in tracked
-                ]),
-            })
 
         conn.commit()
         conn.close()

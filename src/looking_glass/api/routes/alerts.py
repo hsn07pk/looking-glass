@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, WebSocket, WebSocketDisconnect
 
-from looking_glass.api.deps import get_alert_engine, get_embedder
+from looking_glass.api.deps import get_alert_engine, get_embedder, get_store
 from looking_glass.api.schemas import AlertRuleRequest, AlertRuleResponse
 
 router = APIRouter()
@@ -15,9 +16,35 @@ router = APIRouter()
 _ws_clients: list[WebSocket] = []
 
 
+def _scan_frames_for_rule_sync(rule_id: str) -> list[dict]:
+    """Scan stored frame embeddings against a newly registered alert rule (sync)."""
+    engine = get_alert_engine()
+    store = get_store()
+    rule = engine.rules.get(rule_id)
+    if not rule:
+        return []
+
+    hits = store.search_frames(rule.embedding, top_k=50)
+    alerts = []
+    seen_cameras: set[str] = set()
+    for hit in hits:
+        score = hit.get("score", 0.0)
+        cam = hit.get("camera_id", "")
+        if score >= rule.threshold and cam not in seen_cameras:
+            seen_cameras.add(cam)
+            alerts.append({
+                "rule_id": rule.id,
+                "query": rule.query,
+                "camera_id": cam,
+                "timestamp": hit.get("timestamp", 0.0),
+                "score": round(score, 4),
+            })
+    return alerts
+
+
 @router.post("/alerts/rules", response_model=AlertRuleResponse)
 async def create_alert_rule(req: AlertRuleRequest) -> AlertRuleResponse:
-    """Register a new alert rule."""
+    """Register a new alert rule and scan existing frames."""
     engine = get_alert_engine()
     embedder = get_embedder()
     rule_id = engine.register(
@@ -27,6 +54,12 @@ async def create_alert_rule(req: AlertRuleRequest) -> AlertRuleResponse:
         embedder=embedder,
     )
     rule = engine.rules[rule_id]
+
+    # Scan existing frames and broadcast alerts via WebSocket
+    fired = _scan_frames_for_rule_sync(rule_id)
+    for alert in fired:
+        await broadcast_alert(alert)
+
     return AlertRuleResponse(
         id=rule.id, query=rule.query,
         threshold=rule.threshold, camera_filter=rule.camera_filter,

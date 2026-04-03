@@ -34,7 +34,7 @@ class SearchResponse(BaseModel):
 
 class AlertRuleRequest(BaseModel):
     q: str
-    threshold: float = 0.25
+    threshold: float = 0.07
     camera_filter: str | None = None
 
 
