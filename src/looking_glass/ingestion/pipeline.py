@@ -32,6 +32,7 @@ class Embedder(Protocol):
 
 class Captioner(Protocol):
     def caption(self, image: npt.NDArray[np.uint8]) -> str: ...
+    def exhaustive_caption(self, image: npt.NDArray[np.uint8]) -> str: ...
     def grounded_detection(self, image: npt.NDArray[np.uint8], text: str) -> list[dict]: ...
 
 
@@ -170,16 +171,19 @@ class IngestionPipeline:
                     ),
                 )
 
-            # Caption first — then use it for grounded detection
-            cap = self.captioner.caption(frame.image)
+            # Short caption for grounded detection (Florence-2)
+            short_cap = self.captioner.caption(frame.image)
+
+            # Exhaustive caption via Ollama VLM for rich queryable descriptions
+            cap = self.captioner.exhaustive_caption(frame.image)
             stats["captions"] += 1
 
             # Florence-2 grounded detection: find bboxes for everything in the caption.
             # This automatically detects all objects/people/actions without a fixed class list.
             grounded_dets: list[dict] = []
-            if cap:
+            if short_cap:
                 try:
-                    raw_gd = self.captioner.grounded_detection(frame.image, cap)
+                    raw_gd = self.captioner.grounded_detection(frame.image, short_cap)
                     grounded_dets = [
                         {
                             "bbox": list(g["bbox"]),

@@ -1,14 +1,25 @@
-"""Florence-2 dense captioner."""
+"""Florence-2 dense captioner + Ollama VLM exhaustive captioner."""
 
 from __future__ import annotations
 
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
 import torch
 from PIL import Image
 from transformers import AutoModelForCausalLM, AutoProcessor
+
+EXHAUSTIVE_PROMPT = """Describe this surveillance camera frame exhaustively. Cover ALL of the following:
+1. PEOPLE: count, gender, estimated age, clothing (colors, type), accessories, posture, actions
+2. VEHICLES: type, color, make if visible, license plate text if readable
+3. OBJECTS: all visible objects, their colors, positions
+4. BACKGROUND: buildings, signs (transcribe text), furniture, weather, lighting
+5. ACTIONS: what is happening, interactions between people/objects
+6. SPATIAL: where things are relative to each other (left, right, foreground, background)
+Be specific about colors, materials, and details. Do not omit anything visible."""
 
 
 def _device() -> str:
@@ -85,6 +96,41 @@ class DenseCaptioner:
         pil_img = self._to_pil(image)
         result = self._run_task(pil_img, "<MORE_DETAILED_CAPTION>")
         return result.get("<MORE_DETAILED_CAPTION>", "")
+
+    def exhaustive_caption(self, image: npt.NDArray[np.uint8]) -> str:
+        """Generate an exhaustive, paragraph-length caption using Ollama VLM.
+
+        Uses minicpm-v (or llava fallback) to produce detailed descriptions
+        covering people, clothing colors, objects, actions, spatial layout.
+        """
+        import cv2
+        import ollama
+
+        # Save frame to temp file for Ollama
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+            tmp_path = f.name
+            # Convert BGR to RGB for saving
+            if image.ndim == 3 and image.shape[2] == 3:
+                cv2.imwrite(tmp_path, image)
+            else:
+                cv2.imwrite(tmp_path, image)
+
+        try:
+            response = ollama.chat(
+                model="minicpm-v",
+                messages=[{
+                    "role": "user",
+                    "content": EXHAUSTIVE_PROMPT,
+                    "images": [tmp_path],
+                }],
+                options={"temperature": 0},
+            )
+            return response.message.content
+        except Exception:
+            # Fallback to Florence-2 MORE_DETAILED_CAPTION
+            return self.dense_caption(image)
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
 
     def grounded_detection(
         self, image: npt.NDArray[np.uint8], text: str,
