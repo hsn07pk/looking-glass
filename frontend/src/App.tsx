@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Search, Shield, MessageSquare, Radio, Trash2, Send, Camera, Eye, HelpCircle, Settings, X } from 'lucide-react'
+import { Search, Shield, MessageSquare, Radio, Trash2, Send, Camera, Eye, HelpCircle, Settings, X, Scan, Zap } from 'lucide-react'
 import './index.css'
 
 const API = '/api'
+
+// ─── Types ───
 
 interface CameraData { camera_id: string; clip_name: string }
 interface SearchResultItem {
@@ -13,396 +15,294 @@ interface SearchResultItem {
 interface AlertRule { id: string; query: string; threshold: number; camera_filter: string | null }
 interface AlertEvent { rule_id: string; query: string; camera_id: string; timestamp: number; score: number }
 interface ChatMessage { role: 'user' | 'assistant'; content: string }
-interface TrackDetection {
+interface TrackDet {
   track_id: number; timestamp: number
   x1: number; y1: number; x2: number; y2: number
   class_name: string; score: number
 }
 
-function App() {
+// ─── App ───
+
+export default function App() {
   const [cameras, setCameras] = useState<CameraData[]>([])
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResultItem[]>([])
-  const [selectedResultIdx, setSelectedResultIdx] = useState(-1)
+  const [selIdx, setSelIdx] = useState(-1)
   const [searching, setSearching] = useState(false)
-  const [selectedCam, setSelectedCam] = useState<string | null>(null)
-  const [alertRules, setAlertRules] = useState<AlertRule[]>([])
+  const [cam, setCam] = useState<string | null>(null)
+  const [rules, setRules] = useState<AlertRule[]>([])
   const [alerts, setAlerts] = useState<AlertEvent[]>([])
-  const [alertQuery, setAlertQuery] = useState('')
-  const [chatQuery, setChatQuery] = useState('')
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
-  const [chatLoading, setChatLoading] = useState(false)
+  const [alertQ, setAlertQ] = useState('')
+  const [chatQ, setChatQ] = useState('')
+  const [msgs, setMsgs] = useState<ChatMessage[]>([])
+  const [chatBusy, setChatBusy] = useState(false)
   const [clock, setClock] = useState(new Date())
-  const [showHelp, setShowHelp] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
-  const wsRef = useRef<WebSocket | null>(null)
-  const mainVideoRef = useRef<HTMLVideoElement | null>(null)
-  const videoContainerRef = useRef<HTMLDivElement | null>(null)
-  const chatEndRef = useRef<HTMLDivElement | null>(null)
-  const [videoDims, setVideoDims] = useState({ w: 1920, h: 1080 })
-  const [videoRect, setVideoRect] = useState({ x: 0, y: 0, w: 0, h: 0 })
-  const [trackData, setTrackData] = useState<TrackDetection[]>([])
-  const [liveBboxes, setLiveBboxes] = useState<{ x1: number; y1: number; x2: number; y2: number; class_name: string; score: number }[]>([])
-  const animRef = useRef<number>(0)
+  const [modal, setModal] = useState<'help' | 'settings' | null>(null)
 
-  // Calculate actual video render rect within container (accounting for letterboxing)
-  const updateVideoRect = useCallback(() => {
-    const vid = mainVideoRef.current
-    const container = videoContainerRef.current
-    if (!vid || !container) return
-    const vw = vid.videoWidth || 1920
-    const vh = vid.videoHeight || 1080
-    const cw = container.clientWidth
-    const ch = container.clientHeight
-    const videoAspect = vw / vh
-    const containerAspect = cw / ch
+  const ws = useRef<WebSocket | null>(null)
+  const vidRef = useRef<HTMLVideoElement | null>(null)
+  const boxRef = useRef<HTMLDivElement | null>(null)
+  const chatEnd = useRef<HTMLDivElement | null>(null)
+
+  const [vNat, setVNat] = useState({ w: 1920, h: 1080 })
+  const [vRect, setVRect] = useState({ x: 0, y: 0, w: 0, h: 0 })
+  const [tracks, setTracks] = useState<TrackDet[]>([])
+  const [boxes, setBoxes] = useState<{ x1: number; y1: number; x2: number; y2: number; cls: string; conf: number }[]>([])
+  const raf = useRef(0)
+
+  // ─── Video rect calculation (accounts for object-contain letterboxing) ───
+
+  const syncRect = useCallback(() => {
+    const v = vidRef.current, c = boxRef.current
+    if (!v || !c) return
+    const vw = v.videoWidth || 1920, vh = v.videoHeight || 1080
+    const cw = c.clientWidth, ch = c.clientHeight
+    const va = vw / vh, ca = cw / ch
     let rw: number, rh: number, rx: number, ry: number
-    if (videoAspect > containerAspect) {
-      rw = cw; rh = cw / videoAspect; rx = 0; ry = (ch - rh) / 2
-    } else {
-      rh = ch; rw = ch * videoAspect; ry = 0; rx = (cw - rw) / 2
-    }
-    setVideoRect({ x: rx, y: ry, w: rw, h: rh })
-    setVideoDims({ w: vw, h: vh })
+    if (va > ca) { rw = cw; rh = cw / va; rx = 0; ry = (ch - rh) / 2 }
+    else { rh = ch; rw = ch * va; ry = 0; rx = (cw - rw) / 2 }
+    setVRect({ x: rx, y: ry, w: rw, h: rh })
+    setVNat({ w: vw, h: vh })
   }, [])
+
+  // ─── Effects ───
+
+  useEffect(() => { const t = setInterval(() => setClock(new Date()), 1000); return () => clearInterval(t) }, [])
+  useEffect(() => { fetch(`${API}/cameras`).then(r => r.json()).then(setCameras).catch(() => {}); loadRules() }, [])
+  useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs])
 
   useEffect(() => {
-    const t = setInterval(() => setClock(new Date()), 1000)
-    return () => clearInterval(t)
-  }, [])
+    const c = boxRef.current; if (!c) return
+    const ro = new ResizeObserver(syncRect); ro.observe(c)
+    return () => ro.disconnect()
+  }, [syncRect])
 
-  useEffect(() => {
-    fetch(`${API}/cameras`).then(r => r.json()).then(setCameras).catch(() => {})
-    fetchAlertRules()
-  }, [])
-
+  // WebSocket
   useEffect(() => {
     try {
-      const wsHost = window.location.hostname || 'localhost'
-      const ws = new WebSocket(`ws://${wsHost}:8000/alerts/ws`)
-      wsRef.current = ws
-      ws.onmessage = (e) => {
-        const alert = JSON.parse(e.data) as AlertEvent
-        setAlerts(prev => [alert, ...prev].slice(0, 50))
-      }
-      const hb = setInterval(() => { if (ws.readyState === 1) ws.send('ping') }, 30000)
-      return () => { clearInterval(hb); ws.close() }
+      const s = new WebSocket(`ws://${window.location.hostname || 'localhost'}:8000/alerts/ws`)
+      ws.current = s
+      s.onmessage = e => { const a = JSON.parse(e.data) as AlertEvent; setAlerts(p => [a, ...p].slice(0, 40)) }
+      const hb = setInterval(() => { if (s.readyState === 1) s.send('ping') }, 25000)
+      return () => { clearInterval(hb); s.close() }
     } catch {}
   }, [])
 
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMessages])
-
-  // Resize observer for video container
+  // Fetch tracks when camera changes
   useEffect(() => {
-    const container = videoContainerRef.current
-    if (!container) return
-    const ro = new ResizeObserver(() => updateVideoRect())
-    ro.observe(container)
-    return () => ro.disconnect()
-  }, [updateVideoRect])
+    if (cam) fetch(`${API}/cameras/${cam}/tracks`).then(r => r.json()).then(setTracks).catch(() => setTracks([]))
+    else setTracks([])
+  }, [cam])
 
-  const fetchAlertRules = async () => {
-    try { setAlertRules(await (await fetch(`${API}/alerts/rules`)).json()) } catch {}
-  }
+  // Seek on result select
+  useEffect(() => {
+    const r = results[selIdx]
+    if (r && vidRef.current && cam === r.camera_id) vidRef.current.currentTime = r.timestamp
+  }, [selIdx])
+
+  // ─── Bbox animation loop ───
+
+  useEffect(() => {
+    if (!tracks.length) { setBoxes([]); return }
+    const grouped = new Map<number, TrackDet[]>()
+    for (const d of tracks) { if (!grouped.has(d.track_id)) grouped.set(d.track_id, []); grouped.get(d.track_id)!.push(d) }
+
+    const tick = () => {
+      const v = vidRef.current; if (!v) { raf.current = requestAnimationFrame(tick); return }
+      const t = v.currentTime, out: typeof boxes = []
+      for (const [, ds] of grouped) {
+        let a: TrackDet | null = null, b: TrackDet | null = null
+        for (const d of ds) { if (d.timestamp <= t) a = d; if (d.timestamp >= t && !b) b = d }
+        if (!a && !b) continue; if (!b) b = a; if (!a) a = b
+        const dt = b!.timestamp - a!.timestamp
+        const f = dt > 0 ? Math.max(0, Math.min(1, (t - a!.timestamp) / dt)) : 0
+        if (t < a!.timestamp - 0.5 || t > b!.timestamp + 0.5) continue
+        const lp = (x: number, y: number) => x + (y - x) * f
+        out.push({ x1: lp(a!.x1, b!.x1), y1: lp(a!.y1, b!.y1), x2: lp(a!.x2, b!.x2), y2: lp(a!.y2, b!.y2), cls: a!.class_name, conf: a!.score })
+      }
+      setBoxes(out); raf.current = requestAnimationFrame(tick)
+    }
+    raf.current = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf.current)
+  }, [tracks])
+
+  // ─── Helpers ───
+
+  const loadRules = async () => { try { setRules(await (await fetch(`${API}/alerts/rules`)).json()) } catch {} }
 
   const doSearch = async () => {
-    if (!query.trim()) return
-    setSearching(true)
+    if (!query.trim()) return; setSearching(true)
     try {
-      const data = await (await fetch(`${API}/search`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ q: query, top_k: 10 }),
-      })).json()
-      const newResults = data.results || []
-      setResults(newResults)
-      setSelectedResultIdx(0)
-      if (newResults.length > 0) setSelectedCam(newResults[0].camera_id)
+      const d = await (await fetch(`${API}/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q: query, top_k: 10 }) })).json()
+      const r = d.results || []; setResults(r); setSelIdx(0); if (r.length) setCam(r[0].camera_id)
     } catch { setResults([]) }
     setSearching(false)
   }
 
-  const selectResult = (idx: number) => {
-    setSelectedResultIdx(idx)
-    setSelectedCam(results[idx].camera_id)
-    if (mainVideoRef.current && results[idx].timestamp >= 0) {
-      mainVideoRef.current.currentTime = results[idx].timestamp
-      mainVideoRef.current.play()
-    }
+  const pickResult = (i: number) => {
+    setSelIdx(i); setCam(results[i].camera_id)
+    if (vidRef.current) { vidRef.current.currentTime = results[i].timestamp; vidRef.current.play() }
   }
 
-  const registerAlert = async () => {
-    if (!alertQuery.trim()) return
-    await fetch(`${API}/alerts/rules`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ q: alertQuery }),
-    }).catch(() => {})
-    setAlertQuery('')
-    fetchAlertRules()
+  const addAlert = async () => {
+    if (!alertQ.trim()) return
+    await fetch(`${API}/alerts/rules`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q: alertQ }) }).catch(() => {})
+    setAlertQ(''); loadRules()
   }
 
-  const deleteAlertRule = async (ruleId: string) => {
-    await fetch(`${API}/alerts/rules/${ruleId}`, { method: 'DELETE' }).catch(() => {})
-    fetchAlertRules()
-  }
+  const delRule = async (id: string) => { await fetch(`${API}/alerts/rules/${id}`, { method: 'DELETE' }).catch(() => {}); loadRules() }
 
-  const askAnalytics = async () => {
-    if (!chatQuery.trim()) return
-    const question = chatQuery
-    setChatMessages(prev => [...prev, { role: 'user', content: question }])
-    setChatQuery('')
-    setChatLoading(true)
+  const ask = async () => {
+    if (!chatQ.trim()) return; const q = chatQ
+    setMsgs(p => [...p, { role: 'user', content: q }]); setChatQ(''); setChatBusy(true)
     try {
-      const data = await (await fetch(`${API}/analytics/ask`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ q: question }),
-      })).json()
-      setChatMessages(prev => [...prev, { role: 'assistant', content: data.answer || 'No answer.' }])
-    } catch {
-      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Error connecting to backend.' }])
-    }
-    setChatLoading(false)
+      const d = await (await fetch(`${API}/analytics/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q }) })).json()
+      setMsgs(p => [...p, { role: 'assistant', content: d.answer || 'No answer.' }])
+    } catch { setMsgs(p => [...p, { role: 'assistant', content: 'Connection error.' }]) }
+    setChatBusy(false)
   }
 
-  const activeResult = results[selectedResultIdx] || null
+  const hit = results[selIdx] || null
 
-  useEffect(() => {
-    if (activeResult && mainVideoRef.current && selectedCam === activeResult.camera_id) {
-      mainVideoRef.current.currentTime = activeResult.timestamp
-    }
-  }, [selectedResultIdx])
-
-  // Fetch tracking data
-  useEffect(() => {
-    if (selectedCam) {
-      fetch(`${API}/cameras/${selectedCam}/tracks`).then(r => r.json()).then(setTrackData).catch(() => setTrackData([]))
-    } else { setTrackData([]) }
-  }, [selectedCam])
-
-  // Animate bounding boxes with interpolation
-  useEffect(() => {
-    if (!trackData.length) { setLiveBboxes([]); return }
-    const tracks = new Map<number, TrackDetection[]>()
-    for (const d of trackData) {
-      if (!tracks.has(d.track_id)) tracks.set(d.track_id, [])
-      tracks.get(d.track_id)!.push(d)
-    }
-
-    const animate = () => {
-      const vid = mainVideoRef.current
-      if (!vid) { animRef.current = requestAnimationFrame(animate); return }
-      const t = vid.currentTime
-      const boxes: typeof liveBboxes = []
-      for (const [, dets] of tracks) {
-        let before: TrackDetection | null = null
-        let after: TrackDetection | null = null
-        for (const d of dets) {
-          if (d.timestamp <= t) before = d
-          if (d.timestamp >= t && !after) after = d
-        }
-        if (!before && !after) continue
-        if (before && !after) after = before
-        if (!before && after) before = after
-        const dt = after!.timestamp - before!.timestamp
-        const frac = dt > 0 ? Math.max(0, Math.min(1, (t - before!.timestamp) / dt)) : 0
-        const lerp = (a: number, b: number) => a + (b - a) * frac
-        if (t < before!.timestamp - 0.5 || t > after!.timestamp + 0.5) continue
-        boxes.push({
-          x1: lerp(before!.x1, after!.x1), y1: lerp(before!.y1, after!.y1),
-          x2: lerp(before!.x2, after!.x2), y2: lerp(before!.y2, after!.y2),
-          class_name: before!.class_name, score: before!.score,
-        })
-      }
-      setLiveBboxes(boxes)
-      animRef.current = requestAnimationFrame(animate)
-    }
-    animRef.current = requestAnimationFrame(animate)
-    return () => cancelAnimationFrame(animRef.current)
-  }, [trackData])
-
-  // Convert video-pixel bbox to container-pixel position
-  const bboxStyle = (box: typeof liveBboxes[0]) => {
-    const { w: vw, h: vh } = videoDims
-    const { x: rx, y: ry, w: rw, h: rh } = videoRect
-    if (rw === 0 || rh === 0) return { display: 'none' as const }
-    const scaleX = rw / vw
-    const scaleY = rh / vh
-    return {
-      left: rx + box.x1 * scaleX,
-      top: ry + box.y1 * scaleY,
-      width: (box.x2 - box.x1) * scaleX,
-      height: (box.y2 - box.y1) * scaleY,
-    }
+  const toStyle = (b: typeof boxes[0]) => {
+    const { w: nw, h: nh } = vNat, { x: rx, y: ry, w: rw, h: rh } = vRect
+    if (!rw || !rh) return null
+    const sx = rw / nw, sy = rh / nh
+    return { left: rx + b.x1 * sx, top: ry + b.y1 * sy, width: (b.x2 - b.x1) * sx, height: (b.y2 - b.y1) * sy }
   }
 
-  const captionPreview = activeResult?.caption
-    ? activeResult.caption.length > 180 ? activeResult.caption.slice(0, 180) + '...' : activeResult.caption
-    : null
+  // ─── Render ───
 
   return (
-    <div className="h-screen flex flex-col bg-[#0a0a0a] text-[#e5e5e5]">
+    <div className="h-full flex flex-col bg-[#060608] text-[#d4d4d8] grain">
 
-      {/* Header */}
-      <header className="flex-shrink-0 flex items-center justify-between px-5 py-2 border-b border-[#1a1a1a] bg-[#0c0c0c]">
+      {/* ═══ Top bar ═══ */}
+      <div className="flex-shrink-0 flex items-center justify-between px-4 h-10 border-b border-[#1a1a1f] bg-[#08080b]">
+        <div className="flex items-center gap-2.5">
+          <Scan size={16} className="text-[#00ff88]" />
+          <span className="font-mono text-[11px] font-bold tracking-[0.25em] uppercase text-[#e4e4e7]">Looking Glass</span>
+          <span className="font-mono text-[8px] text-[#3f3f46] tracking-[0.15em] ml-1">SPRINGINEERING 2026</span>
+        </div>
         <div className="flex items-center gap-3">
-          <Eye size={18} className="text-[#00ff88]" />
-          <span className="text-sm font-semibold tracking-[0.15em] uppercase">Looking Glass</span>
-          <span className="text-[9px] text-[#444] font-mono tracking-wider">SPRINGINEERING 2026</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <button onClick={() => setShowHelp(true)} className="text-[#444] hover:text-[#888] transition-colors" title="Help"><HelpCircle size={15} /></button>
-          <button onClick={() => setShowSettings(true)} className="text-[#444] hover:text-[#888] transition-colors" title="Settings"><Settings size={15} /></button>
-          <div className="h-3 w-px bg-[#222]" />
-          <div className="flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#00ff88] live-dot" />
-            <span className="text-[#00ff88] font-mono text-[11px] font-medium">{cameras.length} LIVE</span>
+          <button onClick={() => setModal('help')} className="text-[#3f3f46] hover:text-[#71717a] transition"><HelpCircle size={13} /></button>
+          <button onClick={() => setModal('settings')} className="text-[#3f3f46] hover:text-[#71717a] transition"><Settings size={13} /></button>
+          <div className="w-px h-3.5 bg-[#1a1a1f]" />
+          <div className="flex items-center gap-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-[#00ff88] anim-pulse" />
+            <span className="font-mono text-[9px] font-semibold text-[#00ff88] tracking-wider">{cameras.length} LIVE</span>
           </div>
-          <span className="font-mono text-[11px] text-[#555]">{clock.toLocaleTimeString()}</span>
+          <span className="font-mono text-[9px] text-[#3f3f46] tabular-nums">{clock.toLocaleTimeString()}</span>
         </div>
-      </header>
+      </div>
 
-      {/* Search */}
-      <div className="flex-shrink-0 px-5 py-2 border-b border-[#1a1a1a] bg-[#0c0c0c]">
-        <div className="flex gap-2 max-w-3xl">
-          <div className="flex-1 flex items-center gap-2 bg-[#111] border border-[#222] rounded-lg px-3 py-1.5 focus-within:border-[#00ff88]/40 transition-all">
-            <Search size={14} className="text-[#444]" />
-            <input
-              className="flex-1 bg-transparent outline-none text-sm text-[#e5e5e5] placeholder-[#3a3a3a]"
-              placeholder='Search: "orange truck", "person in red jacket", "dog"'
-              value={query} onChange={e => setQuery(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && doSearch()}
-            />
-            {query && <button onClick={() => setQuery('')} className="text-[#444] hover:text-[#888] text-[10px]">Clear</button>}
+      {/* ═══ Search ═══ */}
+      <div className="flex-shrink-0 px-4 py-1.5 border-b border-[#1a1a1f] bg-[#08080b]">
+        <div className="flex gap-1.5 max-w-2xl">
+          <div className="flex-1 flex items-center gap-2 bg-[#0c0c0f] border border-[#1a1a1f] rounded-md px-3 py-1 focus-within:border-[#00ff88]/30 transition-colors">
+            <Search size={13} className="text-[#3f3f46]" />
+            <input className="flex-1 bg-transparent text-[12px] text-[#d4d4d8] font-mono" placeholder='"orange truck"  "person in red jacket"  "dog"'
+              value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && doSearch()} />
           </div>
           <button onClick={doSearch} disabled={searching}
-            className="px-4 py-1.5 bg-[#00ff88] text-[#0a0a0a] text-sm font-semibold rounded-lg hover:bg-[#00ee7d] transition-all disabled:opacity-40">
-            {searching ? '...' : 'Search'}
+            className="px-3 py-1 bg-[#00ff88] text-[#060608] text-[11px] font-mono font-bold rounded-md hover:bg-[#00ee7d] transition disabled:opacity-30 tracking-wider">
+            {searching ? '...' : 'SEARCH'}
           </button>
         </div>
       </div>
 
-      {/* Main */}
-      <div className="flex-1 flex overflow-hidden min-h-0">
+      {/* ═══ Body ═══ */}
+      <div className="flex-1 flex min-h-0">
 
-        {/* Left */}
-        <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
+        {/* ── Main panel ── */}
+        <div className="flex-1 flex flex-col min-h-0 min-w-0">
 
-          {/* Camera Grid */}
-          <div className="flex-shrink-0 grid grid-cols-4 gap-1 p-2">
-            {cameras.map(cam => (
-              <div key={cam.camera_id}
-                onClick={() => { setSelectedCam(cam.camera_id); setSelectedResultIdx(-1) }}
-                className={`cam-tile relative cursor-pointer rounded overflow-hidden border ${
-                  selectedCam === cam.camera_id ? 'border-[#00ff88]/50 glow-green' : 'border-[#1a1a1a] hover:border-[#333]'
+          {/* Camera filmstrip — compact horizontal */}
+          <div className="flex-shrink-0 flex gap-1 px-3 py-1.5 bg-[#08080b] border-b border-[#1a1a1f] overflow-x-auto">
+            {cameras.map(c => (
+              <div key={c.camera_id} onClick={() => { setCam(c.camera_id); setSelIdx(-1) }}
+                className={`cam-tile relative cursor-pointer rounded-[3px] overflow-hidden border flex-shrink-0 w-[120px] ${
+                  cam === c.camera_id ? 'border-[#00ff88]/50 glow-sm' : 'border-[#1a1a1f]'
                 }`}>
-                <video src={`/videos/${cam.clip_name}`} autoPlay loop muted playsInline className="w-full aspect-video object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
-                <div className="absolute bottom-0 left-0 right-0 px-1.5 py-0.5 flex items-center justify-between">
-                  <span className="font-mono text-[9px] text-[#00ff88] font-medium">{cam.camera_id.toUpperCase()}</span>
-                  <div className="flex items-center gap-0.5">
-                    <div className="w-1 h-1 rounded-full bg-red-500 rec-indicator" />
-                    <span className="font-mono text-[7px] text-red-400/80">REC</span>
-                  </div>
+                <video src={`/videos/${c.clip_name}`} autoPlay loop muted playsInline className="w-full h-[56px] object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
+                <div className="absolute bottom-0 inset-x-0 px-1 py-px flex justify-between items-center">
+                  <span className="font-mono text-[7px] font-bold text-[#00ff88] tracking-wider">{c.camera_id.toUpperCase()}</span>
+                  <div className="flex items-center gap-0.5"><div className="w-[3px] h-[3px] rounded-full bg-red-500 anim-blink" /><span className="font-mono text-[6px] text-red-400/60">REC</span></div>
                 </div>
-                {results.some(r => r.camera_id === cam.camera_id) && (
-                  <div className="absolute top-1 right-1 bg-[#00ff88]/20 rounded px-1 py-px">
-                    <span className="font-mono text-[7px] text-[#00ff88] font-medium">MATCH</span>
-                  </div>
+                {results.some(r => r.camera_id === c.camera_id) && (
+                  <div className="absolute top-0.5 right-0.5"><Zap size={8} className="text-[#00ff88] drop-shadow-[0_0_3px_rgba(0,255,136,0.6)]" /></div>
                 )}
               </div>
             ))}
           </div>
 
-          {/* Video Viewer */}
-          <div ref={videoContainerRef}
-            className="flex-1 relative min-h-[300px] mx-2 mb-1 rounded border border-[#1a1a1a] bg-[#080808] overflow-hidden">
-            {selectedCam ? (
+          {/* ── Video viewer (HERO) ── */}
+          <div ref={boxRef} className="flex-1 relative bg-[#040406] scanline overflow-hidden">
+            {cam ? (
               <>
-                <video
-                  ref={mainVideoRef}
-                  key={selectedCam}
-                  src={`/videos/${cameras.find(c => c.camera_id === selectedCam)?.clip_name}`}
+                <video ref={vidRef} key={cam}
+                  src={`/videos/${cameras.find(c => c.camera_id === cam)?.clip_name}`}
                   autoPlay loop muted playsInline
                   className="absolute inset-0 w-full h-full object-contain"
-                  onLoadedMetadata={() => {
-                    updateVideoRect()
-                    if (activeResult && mainVideoRef.current && selectedCam === activeResult.camera_id) {
-                      mainVideoRef.current.currentTime = activeResult.timestamp
-                    }
-                  }}
+                  onLoadedMetadata={() => { syncRect(); if (hit && vidRef.current && cam === hit.camera_id) vidRef.current.currentTime = hit.timestamp }}
                 />
 
-                {/* Bounding boxes — positioned relative to actual video render area */}
-                {liveBboxes.map((box, i) => {
-                  const style = bboxStyle(box)
-                  if ('display' in style) return null
+                {/* Bboxes */}
+                {boxes.map((b, i) => {
+                  const s = toStyle(b); if (!s) return null
                   return (
-                    <div key={i} className="absolute bbox-corners pointer-events-none"
-                      style={{ ...style, transition: 'left 0.08s linear, top 0.08s linear, width 0.08s linear, height 0.08s linear',
-                        boxShadow: '0 0 6px rgba(0,255,136,0.25)' }}>
-                      <span className="bbox-corner-tr" />
-                      <span className="bbox-corner-bl" />
-                      <span className="absolute -top-4 left-0 font-mono text-[9px] bg-black/80 backdrop-blur-sm text-[#00ff88] px-1 py-px rounded-sm whitespace-nowrap border border-[#00ff88]/30">
-                        {box.class_name} {(box.score * 100).toFixed(0)}%
+                    <div key={i} className="absolute bbox-bracket pointer-events-none"
+                      style={{ ...s, transition: 'left 80ms linear, top 80ms linear, width 80ms linear, height 80ms linear', boxShadow: '0 0 8px rgba(0,255,136,0.18)' }}>
+                      <span className="bbox-bracket-tr" /><span className="bbox-bracket-bl" />
+                      <span className="absolute -top-3.5 left-0 font-mono text-[8px] bg-[#060608]/80 backdrop-blur-sm text-[#00ff88] px-1 py-px border border-[#00ff88]/20 rounded-sm whitespace-nowrap">
+                        {b.cls} {(b.conf * 100).toFixed(0)}%
                       </span>
                     </div>
                   )
                 })}
 
-                {/* Camera label */}
-                <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/60 backdrop-blur-sm rounded px-1.5 py-0.5 border border-[#222] z-10">
-                  <Camera size={9} className="text-[#00ff88]" />
-                  <span className="font-mono text-[9px] text-[#00ff88]">{selectedCam.toUpperCase()}</span>
+                {/* HUD overlays */}
+                <div className="absolute top-2 right-2 flex items-center gap-1 bg-[#060608]/70 backdrop-blur-sm border border-[#1a1a1f] rounded px-1.5 py-0.5 z-10">
+                  <Camera size={8} className="text-[#00ff88]" />
+                  <span className="font-mono text-[8px] font-bold text-[#00ff88] tracking-wider">{cam.toUpperCase()}</span>
                 </div>
 
-                {/* Caption */}
-                {captionPreview && activeResult && selectedCam === activeResult.camera_id && (
-                  <div className="absolute top-2 left-2 max-w-sm bg-black/60 backdrop-blur-sm rounded px-2 py-1 border border-[#222] z-10">
-                    <p className="text-[10px] text-white/70 leading-relaxed">{captionPreview}</p>
+                {hit && cam === hit.camera_id && (
+                  <div className="absolute bottom-2 left-2 flex items-center gap-2 bg-[#060608]/70 backdrop-blur-sm border border-[#1a1a1f] rounded px-2 py-1 z-10">
+                    <span className="font-mono text-[11px] font-bold text-[#00ff88]">{(hit.score * 100).toFixed(1)}%</span>
+                    <span className="w-px h-3 bg-[#27272a]" />
+                    <span className="font-mono text-[9px] text-[#52525b]">{hit.timestamp.toFixed(1)}s</span>
+                    {hit.detections.length > 0 && <span className="font-mono text-[9px] text-[#3f3f46]">{hit.detections.length} det</span>}
                   </div>
                 )}
 
-                {/* Match info */}
-                {activeResult && selectedCam === activeResult.camera_id && (
-                  <div className="absolute bottom-2 left-2 flex items-center gap-2 bg-black/70 backdrop-blur-sm rounded px-2 py-1 border border-[#222] z-10">
-                    <span className="font-mono text-[11px] font-semibold text-[#00ff88]">{(activeResult.score * 100).toFixed(1)}%</span>
-                    <span className="text-[#333]">|</span>
-                    <span className="font-mono text-[10px] text-[#666]">{activeResult.timestamp.toFixed(1)}s</span>
-                    {activeResult.detections.length > 0 && (
-                      <span className="font-mono text-[10px] text-[#555]">{activeResult.detections.length} det</span>
-                    )}
+                {hit && cam === hit.camera_id && hit.caption && (
+                  <div className="absolute top-2 left-2 max-w-sm bg-[#060608]/70 backdrop-blur-sm border border-[#1a1a1f] rounded px-2 py-1 z-10">
+                    <p className="font-mono text-[8px] text-[#a1a1aa] leading-relaxed">{hit.caption.length > 160 ? hit.caption.slice(0, 160) + '...' : hit.caption}</p>
                   </div>
                 )}
               </>
             ) : (
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-[#2a2a2a] gap-2">
-                <Eye size={28} />
-                <span className="text-xs">Select a camera or search to begin</span>
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+                <Eye size={32} className="text-[#1a1a1f]" />
+                <span className="font-mono text-[10px] text-[#27272a] tracking-wider">SELECT CAMERA OR SEARCH</span>
               </div>
             )}
           </div>
 
           {/* Results strip */}
           {results.length > 0 && (
-            <div className="flex-shrink-0 px-2 pb-2">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="font-mono text-[9px] text-[#444] uppercase">{results.length} results for</span>
-                <span className="font-mono text-[9px] text-[#00ff88]">"{query}"</span>
+            <div className="flex-shrink-0 px-3 py-1 bg-[#08080b] border-t border-[#1a1a1f]">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="font-mono text-[8px] text-[#3f3f46] tracking-wider uppercase">{results.length} hits</span>
+                <span className="font-mono text-[8px] text-[#00ff88]">"{query}"</span>
               </div>
-              <div className="flex gap-1 overflow-x-auto pb-1">
+              <div className="flex gap-1 overflow-x-auto pb-0.5">
                 {results.map((r, i) => (
-                  <button key={i} onClick={() => selectResult(i)}
-                    className={`result-card flex-shrink-0 rounded border px-2 py-1 text-left ${
-                      selectedResultIdx === i ? 'active' : 'border-[#1a1a1a]'
-                    }`}>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-[10px] font-semibold text-[#aaa]">{r.camera_id.toUpperCase()}</span>
-                      <span className={`font-mono text-[9px] ${selectedResultIdx === i ? 'text-[#00ff88]' : 'text-[#444]'}`}>
-                        {(r.score * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                    <div className="font-mono text-[8px] text-[#333] mt-0.5">
-                      {r.timestamp.toFixed(1)}s{r.detections.length > 0 ? ` / ${r.detections.length} det` : ''}
-                    </div>
+                  <button key={i} onClick={() => pickResult(i)}
+                    className={`result-pill flex-shrink-0 rounded-[3px] border px-2 py-0.5 ${selIdx === i ? 'active' : 'border-[#1a1a1f]'}`}>
+                    <span className="font-mono text-[9px] font-semibold text-[#a1a1aa]">{r.camera_id.toUpperCase()}</span>
+                    <span className={`font-mono text-[8px] ml-1.5 ${selIdx === i ? 'text-[#00ff88]' : 'text-[#3f3f46]'}`}>{(r.score * 100).toFixed(0)}%</span>
                   </button>
                 ))}
               </div>
@@ -410,50 +310,42 @@ function App() {
           )}
         </div>
 
-        {/* Right Sidebar */}
-        <div className="w-72 flex-shrink-0 border-l border-[#1a1a1a] flex flex-col bg-[#0b0b0b] overflow-hidden">
+        {/* ── Sidebar ── */}
+        <div className="w-64 flex-shrink-0 border-l border-[#1a1a1f] flex flex-col bg-[#08080b]">
 
           {/* Alerts */}
-          <div className="flex-1 flex flex-col border-b border-[#1a1a1a] min-h-0">
-            <div className="flex-shrink-0 px-3 py-1.5 flex items-center gap-2 border-b border-[#1a1a1a]">
-              <Shield size={11} className="text-[#00ff88]" />
-              <span className="text-[10px] font-semibold tracking-wider uppercase">Alerts</span>
-              {alerts.length > 0 && (
-                <span className="ml-auto font-mono text-[8px] bg-[#00ff88]/15 text-[#00ff88] px-1.5 py-0.5 rounded-full">{alerts.length}</span>
-              )}
+          <div className="flex-1 flex flex-col border-b border-[#1a1a1f] min-h-0">
+            <div className="flex-shrink-0 px-3 py-1.5 flex items-center gap-1.5 border-b border-[#1a1a1f]">
+              <Shield size={10} className="text-[#00ff88]" />
+              <span className="font-mono text-[9px] font-bold tracking-[0.15em] uppercase">Alerts</span>
+              {alerts.length > 0 && <span className="ml-auto font-mono text-[7px] bg-[#00ff88]/10 text-[#00ff88] px-1 rounded-full">{alerts.length}</span>}
             </div>
-            <div className="flex-shrink-0 px-3 py-1.5">
-              <div className="flex gap-1">
-                <input className="flex-1 bg-[#111] border border-[#1e1e1e] rounded px-2 py-1 text-[10px] outline-none focus:border-[#00ff88]/30 text-[#ccc] placeholder-[#333]"
-                  placeholder="Alert when: person with bag..."
-                  value={alertQuery} onChange={e => setAlertQuery(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && registerAlert()} />
-                <button onClick={registerAlert} className="px-1.5 py-1 bg-[#00ff88] text-[#0a0a0a] rounded text-[10px] font-bold">+</button>
+            <div className="flex-shrink-0 px-2 py-1">
+              <div className="flex gap-0.5">
+                <input className="flex-1 bg-[#0c0c0f] border border-[#1a1a1f] rounded-[3px] px-1.5 py-0.5 text-[9px] font-mono text-[#d4d4d8] focus:border-[#00ff88]/25 transition"
+                  placeholder="person with bag..." value={alertQ} onChange={e => setAlertQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && addAlert()} />
+                <button onClick={addAlert} className="px-1 bg-[#00ff88] text-[#060608] rounded-[3px] text-[9px] font-bold">+</button>
               </div>
             </div>
-            {alertRules.length > 0 && (
-              <div className="flex-shrink-0 px-3 pb-1">
-                {alertRules.map(rule => (
-                  <div key={rule.id} className="flex items-center justify-between py-0.5 group">
-                    <span className="text-[9px] text-[#555] truncate font-mono">{rule.query}</span>
-                    <button onClick={() => deleteAlertRule(rule.id)} className="text-[#333] hover:text-red-400 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Trash2 size={8} />
-                    </button>
+            {rules.length > 0 && (
+              <div className="flex-shrink-0 px-2 pb-0.5">
+                {rules.map(r => (
+                  <div key={r.id} className="flex items-center py-px group">
+                    <span className="font-mono text-[8px] text-[#52525b] truncate flex-1">{r.query}</span>
+                    <button onClick={() => delRule(r.id)} className="text-[#27272a] hover:text-red-400 opacity-0 group-hover:opacity-100 transition"><Trash2 size={7} /></button>
                   </div>
                 ))}
               </div>
             )}
-            <div className="flex-1 overflow-y-auto px-3 min-h-0">
-              {alerts.length === 0 && alertRules.length === 0 && (
-                <p className="text-[9px] text-[#2a2a2a] mt-2 text-center">Set alerts to monitor cameras</p>
-              )}
+            <div className="flex-1 overflow-y-auto px-2 min-h-0">
+              {!alerts.length && !rules.length && <p className="font-mono text-[8px] text-[#1a1a1f] text-center mt-3">No alerts configured</p>}
               {alerts.map((a, i) => (
-                <div key={i} className="alert-entry flex items-start gap-1.5 py-1 border-b border-[#131313]">
-                  <Radio size={9} className="text-[#00ff88] mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <span className="font-mono text-[9px] text-[#00ff88]">{a.camera_id.toUpperCase()}</span>
-                    <span className="font-mono text-[8px] text-[#333] ml-1">{(a.score * 100).toFixed(0)}%</span>
-                    <span className="text-[9px] text-[#444] block truncate">{a.query}</span>
+                <div key={i} className="anim-fade-up flex items-start gap-1 py-1 border-b border-[#0f0f12]" style={{ animationDelay: `${i * 30}ms` }}>
+                  <Radio size={7} className="text-[#00ff88] mt-0.5" />
+                  <div className="min-w-0">
+                    <span className="font-mono text-[8px] font-semibold text-[#00ff88]">{a.camera_id.toUpperCase()}</span>
+                    <span className="font-mono text-[7px] text-[#27272a] ml-1">{(a.score * 100).toFixed(0)}%</span>
+                    <p className="font-mono text-[8px] text-[#3f3f46] truncate">{a.query}</p>
                   </div>
                 </div>
               ))}
@@ -462,124 +354,107 @@ function App() {
 
           {/* Chat */}
           <div className="flex-1 flex flex-col min-h-0">
-            <div className="flex-shrink-0 px-3 py-1.5 flex items-center gap-2 border-b border-[#1a1a1a]">
-              <MessageSquare size={11} className="text-[#00ff88]" />
-              <span className="text-[10px] font-semibold tracking-wider uppercase">Analytics</span>
+            <div className="flex-shrink-0 px-3 py-1.5 flex items-center gap-1.5 border-b border-[#1a1a1f]">
+              <MessageSquare size={10} className="text-[#00ff88]" />
+              <span className="font-mono text-[9px] font-bold tracking-[0.15em] uppercase">Analytics</span>
             </div>
-            <div className="flex-1 overflow-y-auto px-3 py-2 min-h-0">
-              {chatMessages.length === 0 && (
-                <div className="mt-1 flex flex-col gap-1">
-                  <p className="text-[8px] text-[#2a2a2a] tracking-wider uppercase mb-1">Try asking</p>
+            <div className="flex-1 overflow-y-auto px-2 py-1.5 min-h-0">
+              {!msgs.length && (
+                <div className="flex flex-col gap-0.5 mt-0.5">
+                  <p className="font-mono text-[7px] text-[#1a1a1f] tracking-wider uppercase mb-0.5">Suggestions</p>
                   {['How many people in the lobby?', 'What color clothes on cam03?', 'Count vehicles on cam01'].map(q => (
-                    <button key={q} onClick={() => setChatQuery(q)}
-                      className="text-[10px] text-left bg-[#0e0e0e] border border-[#1a1a1a] rounded px-2 py-1 hover:border-[#2a2a2a] hover:bg-[#111] transition-all text-[#555]">
+                    <button key={q} onClick={() => setChatQ(q)}
+                      className="font-mono text-[9px] text-left text-[#52525b] bg-[#0c0c0f] border border-[#1a1a1f] rounded-[3px] px-2 py-1 hover:border-[#27272a] hover:text-[#71717a] transition">
                       {q}
                     </button>
                   ))}
                 </div>
               )}
-              {chatMessages.map((msg, i) => (
-                <div key={i} className={`chat-msg mb-1.5 ${msg.role === 'user' ? 'text-right' : ''}`}>
-                  <div className={`inline-block rounded-lg px-2 py-1 text-[10px] leading-relaxed max-w-[95%] ${
-                    msg.role === 'user'
-                      ? 'bg-[#00ff88]/8 text-[#00ff88] border border-[#00ff88]/15 rounded-br-sm'
-                      : 'bg-[#111] text-[#bbb] border border-[#1a1a1a] rounded-bl-sm'
-                  }`}>{msg.content}</div>
+              {msgs.map((m, i) => (
+                <div key={i} className={`anim-fade-up mb-1 ${m.role === 'user' ? 'text-right' : ''}`} style={{ animationDelay: '50ms' }}>
+                  <div className={`inline-block rounded-md px-2 py-1 text-[9px] font-mono leading-relaxed max-w-[95%] ${
+                    m.role === 'user'
+                      ? 'bg-[#00ff88]/5 text-[#00ff88] border border-[#00ff88]/10'
+                      : 'bg-[#0c0c0f] text-[#a1a1aa] border border-[#1a1a1f]'
+                  }`}>{m.content}</div>
                 </div>
               ))}
-              {chatLoading && (
-                <div className="chat-msg mb-1.5">
-                  <div className="inline-block rounded-lg px-2 py-1 text-[10px] bg-[#111] border border-[#1a1a1a] text-[#444]">
+              {chatBusy && (
+                <div className="anim-fade-in mb-1">
+                  <div className="inline-block rounded-md px-2 py-1 text-[9px] font-mono bg-[#0c0c0f] border border-[#1a1a1f] text-[#3f3f46]">
                     <span className="loading-dots"><span>.</span><span>.</span><span>.</span></span>
                   </div>
                 </div>
               )}
-              <div ref={chatEndRef} />
+              <div ref={chatEnd} />
             </div>
-            <div className="flex-shrink-0 px-3 py-1.5 border-t border-[#1a1a1a]">
-              <div className="flex gap-1">
-                <input className="flex-1 bg-[#111] border border-[#1e1e1e] rounded px-2 py-1 text-[10px] outline-none focus:border-[#00ff88]/30 text-[#ccc] placeholder-[#333]"
-                  placeholder="Ask about the footage..."
-                  value={chatQuery} onChange={e => setChatQuery(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && askAnalytics()} />
-                <button onClick={askAnalytics} disabled={chatLoading}
-                  className="px-1.5 py-1 bg-[#00ff88] text-[#0a0a0a] rounded disabled:opacity-30">
-                  <Send size={10} />
-                </button>
+            <div className="flex-shrink-0 px-2 py-1 border-t border-[#1a1a1f]">
+              <div className="flex gap-0.5">
+                <input className="flex-1 bg-[#0c0c0f] border border-[#1a1a1f] rounded-[3px] px-1.5 py-1 text-[9px] font-mono text-[#d4d4d8] focus:border-[#00ff88]/25 transition"
+                  placeholder="Ask about footage..." value={chatQ} onChange={e => setChatQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && ask()} />
+                <button onClick={ask} disabled={chatBusy} className="px-1 bg-[#00ff88] text-[#060608] rounded-[3px] disabled:opacity-20 transition"><Send size={9} /></button>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Help Modal */}
-      {showHelp && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center" onClick={() => setShowHelp(false)}>
-          <div className="bg-[#111] border border-[#222] rounded-xl max-w-lg w-full mx-4 p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold">Getting Started</h2>
-              <button onClick={() => setShowHelp(false)} className="text-[#555] hover:text-white"><X size={16} /></button>
-            </div>
-            <div className="space-y-4 text-sm text-[#999]">
-              <div>
-                <h3 className="text-[#00ff88] font-medium text-xs uppercase tracking-wider mb-1">Search</h3>
-                <p>Type natural language queries like "find the orange truck" or "person in red jacket". The system searches across all camera feeds using AI vision models.</p>
+      {/* ═══ Modals ═══ */}
+      {modal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-[2px] z-50 flex items-center justify-center anim-fade-in" onClick={() => setModal(null)}>
+          <div className="bg-[#0c0c0f] border border-[#1a1a1f] rounded-lg max-w-lg w-full mx-4 anim-fade-up" onClick={e => e.stopPropagation()}>
+            {modal === 'help' ? (
+              <div className="p-5">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="font-mono text-sm font-bold tracking-wider">GETTING STARTED</h2>
+                  <button onClick={() => setModal(null)} className="text-[#3f3f46] hover:text-white transition"><X size={14} /></button>
+                </div>
+                <div className="space-y-3">
+                  {[
+                    { icon: <Search size={12} />, title: 'SEARCH', desc: 'Type natural language: "find the orange truck", "person in red jacket". AI searches all camera feeds simultaneously.' },
+                    { icon: <Camera size={12} />, title: 'CAMERAS', desc: 'Click any camera thumbnail to view its feed full-size. Search results highlight matching cameras with a bolt icon.' },
+                    { icon: <Shield size={12} />, title: 'ALERTS', desc: 'Register watchlists like "person with bag" to get real-time notifications when matching objects appear in any feed.' },
+                    { icon: <MessageSquare size={12} />, title: 'ANALYTICS', desc: 'Ask questions about footage: "what color is the car?", "how many people?". AI analyzes scene descriptions and tracking data.' },
+                  ].map(s => (
+                    <div key={s.title} className="flex gap-3">
+                      <div className="mt-0.5 text-[#00ff88]">{s.icon}</div>
+                      <div>
+                        <h3 className="font-mono text-[9px] font-bold text-[#00ff88] tracking-[0.15em] mb-0.5">{s.title}</h3>
+                        <p className="text-[11px] text-[#71717a] leading-relaxed">{s.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="pt-3 mt-3 border-t border-[#1a1a1f]">
+                    <p className="font-mono text-[8px] text-[#27272a] leading-relaxed">SigLIP search / YOLO-World + ByteTrack detection / Florence-2 grounding / MiniCPM-V scene analysis / Ollama LLM. All local, zero cloud.</p>
+                  </div>
+                </div>
               </div>
-              <div>
-                <h3 className="text-[#00ff88] font-medium text-xs uppercase tracking-wider mb-1">Cameras</h3>
-                <p>Click any camera tile to view its feed. When you search, matching cameras show a green MATCH badge. Click search result cards at the bottom to jump between matches.</p>
+            ) : (
+              <div className="p-5">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="font-mono text-sm font-bold tracking-wider">SETTINGS</h2>
+                  <button onClick={() => setModal(null)} className="text-[#3f3f46] hover:text-white transition"><X size={14} /></button>
+                </div>
+                <div className="space-y-0">
+                  {[
+                    { label: 'Bounding boxes', value: 'ON', accent: true },
+                    { label: 'Caption overlay', value: 'ON', accent: true },
+                    { label: 'Search results', value: '10', accent: false },
+                    { label: 'Alert threshold', value: '7%', accent: false },
+                    { label: 'Vision model', value: 'minicpm-v', accent: false },
+                    { label: 'LLM model', value: 'llama3.2:3b', accent: false },
+                  ].map(s => (
+                    <div key={s.label} className="flex items-center justify-between py-2 border-b border-[#0f0f12]">
+                      <span className="text-[11px] text-[#71717a]">{s.label}</span>
+                      <span className={`font-mono text-[10px] font-semibold ${s.accent ? 'text-[#00ff88]' : 'text-[#52525b]'}`}>{s.value}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div>
-                <h3 className="text-[#00ff88] font-medium text-xs uppercase tracking-wider mb-1">Alerts</h3>
-                <p>Register alert rules like "person with bag" to get notified when matching objects are detected. Alerts fire automatically when new matches are found.</p>
-              </div>
-              <div>
-                <h3 className="text-[#00ff88] font-medium text-xs uppercase tracking-wider mb-1">Analytics Chat</h3>
-                <p>Ask questions about the footage: "how many people in the lobby?", "what color is the car on cam06?". The AI analyzes tracking data and scene descriptions to answer.</p>
-              </div>
-              <div className="pt-2 border-t border-[#222]">
-                <p className="text-[10px] text-[#444]">Looking Glass uses SigLIP for search, YOLO-World + ByteTrack for detection and tracking, Florence-2 for grounding, and MiniCPM-V for detailed scene analysis. All models run locally.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Settings Modal */}
-      {showSettings && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center" onClick={() => setShowSettings(false)}>
-          <div className="bg-[#111] border border-[#222] rounded-xl max-w-md w-full mx-4 p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold">Settings</h2>
-              <button onClick={() => setShowSettings(false)} className="text-[#555] hover:text-white"><X size={16} /></button>
-            </div>
-            <div className="space-y-3 text-sm">
-              <div className="flex items-center justify-between py-2 border-b border-[#1a1a1a]">
-                <span className="text-[#999]">Show bounding boxes</span>
-                <span className="text-[#00ff88] text-xs font-mono">ON</span>
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-[#1a1a1a]">
-                <span className="text-[#999]">Show captions overlay</span>
-                <span className="text-[#00ff88] text-xs font-mono">ON</span>
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-[#1a1a1a]">
-                <span className="text-[#999]">Search results count</span>
-                <span className="text-[#888] text-xs font-mono">10</span>
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-[#1a1a1a]">
-                <span className="text-[#999]">Alert threshold</span>
-                <span className="text-[#888] text-xs font-mono">7%</span>
-              </div>
-              <div className="flex items-center justify-between py-2">
-                <span className="text-[#999]">Analytics model</span>
-                <span className="text-[#888] text-xs font-mono">llama3.2:3b</span>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       )}
     </div>
   )
 }
-
-export default App
