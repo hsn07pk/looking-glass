@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Search, Shield, MessageSquare, Radio, Trash2, Send, Camera, Eye, HelpCircle, Settings, X, Scan, Zap } from 'lucide-react'
+import { Search, Shield, MessageSquare, Radio, Trash2, Send, Camera, Eye, HelpCircle, Settings, X, Scan, Zap, Maximize2, Minimize2 } from 'lucide-react'
 import './index.css'
 
 const API = '/api'
-
-// ─── Types ───
 
 interface CameraData { camera_id: string; clip_name: string }
 interface SearchResultItem {
@@ -21,8 +19,6 @@ interface TrackDet {
   class_name: string; score: number
 }
 
-// ─── App ───
-
 export default function App() {
   const [cameras, setCameras] = useState<CameraData[]>([])
   const [query, setQuery] = useState('')
@@ -38,26 +34,19 @@ export default function App() {
   const [chatBusy, setChatBusy] = useState(false)
   const [clock, setClock] = useState(new Date())
   const [modal, setModal] = useState<'help' | 'settings' | null>(null)
-  const [config, setConfig] = useState({
-    show_bboxes: true, show_captions: true, search_top_k: 10,
-    alert_threshold: 0.07, bbox_min_confidence: 0.35,
-    vision_model: 'minicpm-v', llm_model: 'llama3.2:3b',
-  })
+  const [config, setConfig] = useState({ show_bboxes: true, show_captions: true, search_top_k: 10, bbox_min_confidence: 0.35, vision_model: 'minicpm-v', llm_model: 'llama3.2:3b' })
+  const [videoTime, setVideoTime] = useState(0)
+  const [fullscreen, setFullscreen] = useState(false)
 
   const ws = useRef<WebSocket | null>(null)
   const vidRef = useRef<HTMLVideoElement | null>(null)
   const boxRef = useRef<HTMLDivElement | null>(null)
   const chatEnd = useRef<HTMLDivElement | null>(null)
-
   const [vNat, setVNat] = useState({ w: 1920, h: 1080 })
   const [vRect, setVRect] = useState({ x: 0, y: 0, w: 0, h: 0 })
   const [tracks, setTracks] = useState<TrackDet[]>([])
   const [boxes, setBoxes] = useState<{ x1: number; y1: number; x2: number; y2: number; cls: string; conf: number }[]>([])
   const raf = useRef(0)
-  const [videoTime, setVideoTime] = useState(0)
-  const [fullscreen, setFullscreen] = useState(false)
-
-  // ─── Video rect calculation (accounts for object-contain letterboxing) ───
 
   const syncRect = useCallback(() => {
     const v = vidRef.current, c = boxRef.current
@@ -68,118 +57,99 @@ export default function App() {
     let rw: number, rh: number, rx: number, ry: number
     if (va > ca) { rw = cw; rh = cw / va; rx = 0; ry = (ch - rh) / 2 }
     else { rh = ch; rw = ch * va; ry = 0; rx = (cw - rw) / 2 }
-    setVRect({ x: rx, y: ry, w: rw, h: rh })
-    setVNat({ w: vw, h: vh })
+    setVRect({ x: rx, y: ry, w: rw, h: rh }); setVNat({ w: vw, h: vh })
   }, [])
-
-  // ─── Effects ───
 
   useEffect(() => { const t = setInterval(() => setClock(new Date()), 1000); return () => clearInterval(t) }, [])
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement) return
-      if (e.key === '?' || (e.key === 'h' && !e.ctrlKey)) { setModal('help'); e.preventDefault() }
-      if (e.key === ',' || e.key === 's') { setModal('settings'); e.preventDefault() }
-      if (e.key === 'Escape') { setModal(null); setFullscreen(false) }
-      if (e.key === 'f') { setFullscreen(p => !p); e.preventDefault() }
-      if (e.key === '/' || e.key === 'k') { document.querySelector<HTMLInputElement>('input')?.focus(); e.preventDefault() }
-      // Arrow keys to navigate results
-      if (e.key === 'ArrowRight' && results.length > 0) { pickResult(Math.min(selIdx + 1, results.length - 1)); e.preventDefault() }
-      if (e.key === 'ArrowLeft' && results.length > 0) { pickResult(Math.max(selIdx - 1, 0)); e.preventDefault() }
-      // Number keys 1-8 to select cameras
-      const num = parseInt(e.key); if (num >= 1 && num <= cameras.length) { setCam(cameras[num - 1].camera_id); setSelIdx(-1) }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [results, selIdx, cameras])
-
-  // Track video time
-  useEffect(() => {
-    const v = vidRef.current; if (!v) return
-    const update = () => setVideoTime(v.currentTime)
-    v.addEventListener('timeupdate', update)
-    return () => v.removeEventListener('timeupdate', update)
-  })
   useEffect(() => {
     fetch(`${API}/cameras`).then(r => r.json()).then(setCameras).catch(() => {})
     fetch(`${API}/settings`).then(r => r.json()).then(setConfig).catch(() => {})
     loadRules()
   }, [])
+
   useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs])
 
   useEffect(() => {
     const c = boxRef.current; if (!c) return
-    const ro = new ResizeObserver(syncRect); ro.observe(c)
-    return () => ro.disconnect()
+    const ro = new ResizeObserver(syncRect); ro.observe(c); return () => ro.disconnect()
   }, [syncRect])
 
-  // WebSocket
   useEffect(() => {
     try {
       const s = new WebSocket(`ws://${window.location.hostname || 'localhost'}:8000/alerts/ws`)
       ws.current = s
-      s.onmessage = e => { const a = JSON.parse(e.data) as AlertEvent; setAlerts(p => [a, ...p].slice(0, 40)) }
+      s.onmessage = e => { setAlerts(p => [JSON.parse(e.data) as AlertEvent, ...p].slice(0, 40)) }
       const hb = setInterval(() => { if (s.readyState === 1) s.send('ping') }, 25000)
       return () => { clearInterval(hb); s.close() }
     } catch {}
   }, [])
 
-  // Fetch tracks when camera changes
   useEffect(() => {
     if (cam) fetch(`${API}/cameras/${cam}/tracks`).then(r => r.json()).then(setTracks).catch(() => setTracks([]))
     else setTracks([])
   }, [cam])
 
-  // Seek on result select
   useEffect(() => {
     const r = results[selIdx]
     if (r && vidRef.current && cam === r.camera_id) vidRef.current.currentTime = r.timestamp
   }, [selIdx])
 
-  // ─── Bbox animation loop ───
+  // Keyboard shortcuts
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement) return
+      if (e.key === '?' || e.key === 'h') setModal('help')
+      if (e.key === ',') setModal('settings')
+      if (e.key === 'Escape') { setModal(null); setFullscreen(false) }
+      if (e.key === 'f') setFullscreen(p => !p)
+      if (e.key === '/') { e.preventDefault(); document.querySelector<HTMLInputElement>('input')?.focus() }
+      if (e.key === 'ArrowRight' && results.length) { e.preventDefault(); pickResult(Math.min(selIdx + 1, results.length - 1)) }
+      if (e.key === 'ArrowLeft' && results.length) { e.preventDefault(); pickResult(Math.max(selIdx - 1, 0)) }
+      const n = parseInt(e.key); if (n >= 1 && n <= cameras.length) { setCam(cameras[n - 1].camera_id); setSelIdx(-1) }
+    }
+    window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
+  }, [results, selIdx, cameras])
 
+  // Video time
+  useEffect(() => {
+    const v = vidRef.current; if (!v) return
+    const u = () => setVideoTime(v.currentTime)
+    v.addEventListener('timeupdate', u); return () => v.removeEventListener('timeupdate', u)
+  })
+
+  // Bbox animation
   useEffect(() => {
     if (!tracks.length) { setBoxes([]); return }
-    const grouped = new Map<number, TrackDet[]>()
-    for (const d of tracks) { if (!grouped.has(d.track_id)) grouped.set(d.track_id, []); grouped.get(d.track_id)!.push(d) }
-
+    const g = new Map<number, TrackDet[]>()
+    for (const d of tracks) { if (!g.has(d.track_id)) g.set(d.track_id, []); g.get(d.track_id)!.push(d) }
     const tick = () => {
       const v = vidRef.current; if (!v) { raf.current = requestAnimationFrame(tick); return }
       const t = v.currentTime, out: typeof boxes = []
-      for (const [, ds] of grouped) {
+      for (const [, ds] of g) {
         let a: TrackDet | null = null, b: TrackDet | null = null
         for (const d of ds) { if (d.timestamp <= t) a = d; if (d.timestamp >= t && !b) b = d }
         if (!a && !b) continue; if (!b) b = a; if (!a) a = b
-        const dt = b!.timestamp - a!.timestamp
-        const f = dt > 0 ? Math.max(0, Math.min(1, (t - a!.timestamp) / dt)) : 0
+        const dt = b!.timestamp - a!.timestamp, f = dt > 0 ? Math.max(0, Math.min(1, (t - a!.timestamp) / dt)) : 0
         if (t < a!.timestamp - 0.5 || t > b!.timestamp + 0.5) continue
         const lp = (x: number, y: number) => x + (y - x) * f
         out.push({ x1: lp(a!.x1, b!.x1), y1: lp(a!.y1, b!.y1), x2: lp(a!.x2, b!.x2), y2: lp(a!.y2, b!.y2), cls: a!.class_name, conf: a!.score })
       }
       setBoxes(out); raf.current = requestAnimationFrame(tick)
     }
-    raf.current = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf.current)
+    raf.current = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf.current)
   }, [tracks])
 
-  // ─── Helpers ───
-
   const loadRules = async () => { try { setRules(await (await fetch(`${API}/alerts/rules`)).json()) } catch {} }
-
   const updateConfig = async (key: string, value: string | number | boolean) => {
     setConfig(prev => ({ ...prev, [key]: value }))
-    await fetch(`${API}/settings`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, value }),
-    }).catch(() => {})
+    await fetch(`${API}/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, value }) }).catch(() => {})
   }
 
   const doSearch = async () => {
     if (!query.trim()) return; setSearching(true)
     try {
-      const d = await (await fetch(`${API}/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q: query, top_k: 10 }) })).json()
+      const d = await (await fetch(`${API}/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q: query, top_k: config.search_top_k }) })).json()
       const r = d.results || []; setResults(r); setSelIdx(0); if (r.length) setCam(r[0].camera_id)
     } catch { setResults([]) }
     setSearching(false)
@@ -195,7 +165,6 @@ export default function App() {
     await fetch(`${API}/alerts/rules`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q: alertQ }) }).catch(() => {})
     setAlertQ(''); loadRules()
   }
-
   const delRule = async (id: string) => { await fetch(`${API}/alerts/rules/${id}`, { method: 'DELETE' }).catch(() => {}); loadRules() }
 
   const ask = async () => {
@@ -209,81 +178,85 @@ export default function App() {
   }
 
   const hit = results[selIdx] || null
-
   const toStyle = (b: typeof boxes[0]) => {
     const { w: nw, h: nh } = vNat, { x: rx, y: ry, w: rw, h: rh } = vRect
     if (!rw || !rh) return null
-    const sx = rw / nw, sy = rh / nh
-    return { left: rx + b.x1 * sx, top: ry + b.y1 * sy, width: (b.x2 - b.x1) * sx, height: (b.y2 - b.y1) * sy }
+    return { left: rx + b.x1 * rw / nw, top: ry + b.y1 * rh / nh, width: (b.x2 - b.x1) * rw / nw, height: (b.y2 - b.y1) * rh / nh }
   }
-
-  // ─── Render ───
+  const fmt = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${Math.floor(s % 60).toString().padStart(2, '0')}`
 
   return (
     <div className="h-full flex flex-col bg-[#060608] text-[#d4d4d8] grain">
 
-      {/* ═══ Top bar ═══ */}
-      <div className="flex-shrink-0 flex items-center justify-between px-4 h-10 border-b border-[#1a1a1f] bg-[#08080b]">
-        <div className="flex items-center gap-2.5">
-          <Scan size={16} className="text-[#00ff88]" />
-          <span className="font-mono text-[11px] font-bold tracking-[0.25em] uppercase text-[#e4e4e7]">Looking Glass</span>
-          <span className="font-mono text-[8px] text-[#3f3f46] tracking-[0.15em] ml-1">SPRINGINEERING 2026</span>
-        </div>
+      {/* ═══ HEADER ═══ */}
+      <header className="flex-shrink-0 flex items-center justify-between px-5 h-11 border-b border-[#18181b] bg-[#09090b]">
         <div className="flex items-center gap-3">
-          <button onClick={() => setModal('help')} className="text-[#3f3f46] hover:text-[#71717a] transition"><HelpCircle size={13} /></button>
-          <button onClick={() => setModal('settings')} className="text-[#3f3f46] hover:text-[#71717a] transition"><Settings size={13} /></button>
-          <div className="w-px h-3.5 bg-[#1a1a1f]" />
-          <div className="flex items-center gap-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#00ff88] anim-pulse" />
-            <span className="font-mono text-[9px] font-semibold text-[#00ff88] tracking-wider">{cameras.length} LIVE</span>
-          </div>
-          <span className="font-mono text-[9px] text-[#3f3f46] tabular-nums">{clock.toLocaleTimeString()}</span>
+          <Scan size={18} className="text-[#00ff88]" />
+          <span className="font-mono text-xs font-bold tracking-[0.2em] uppercase text-white">Looking Glass</span>
+          <span className="text-[10px] text-[#3f3f46] font-mono hidden sm:inline">SPRINGINEERING 2026</span>
         </div>
-      </div>
+        <div className="flex items-center gap-4">
+          <button onClick={() => setModal('help')} className="text-[#3f3f46] hover:text-[#a1a1aa] transition" title="Help (H)"><HelpCircle size={15} /></button>
+          <button onClick={() => setModal('settings')} className="text-[#3f3f46] hover:text-[#a1a1aa] transition" title="Settings (,)"><Settings size={15} /></button>
+          <div className="w-px h-4 bg-[#27272a]" />
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-[#00ff88] anim-pulse" />
+            <span className="font-mono text-xs font-semibold text-[#00ff88]">{cameras.length} LIVE</span>
+          </div>
+          <span className="font-mono text-xs text-[#52525b] tabular-nums">{clock.toLocaleTimeString()}</span>
+        </div>
+      </header>
 
-      {/* ═══ Search ═══ */}
-      <div className="flex-shrink-0 px-4 py-1.5 border-b border-[#1a1a1f] bg-[#08080b]">
-        <div className="flex gap-1.5 max-w-2xl">
-          <div className="flex-1 flex items-center gap-2 bg-[#0c0c0f] border border-[#1a1a1f] rounded-md px-3 py-1 focus-within:border-[#00ff88]/30 transition-colors">
-            <Search size={13} className="text-[#3f3f46]" />
-            <input className="flex-1 bg-transparent text-[12px] text-[#d4d4d8] font-mono" placeholder='"orange truck"  "person in red jacket"  "dog"'
+      {/* ═══ SEARCH ═══ */}
+      <div className="flex-shrink-0 px-5 py-2 border-b border-[#18181b] bg-[#09090b]">
+        <div className="flex gap-2">
+          <div className="flex-1 max-w-2xl flex items-center gap-2 bg-[#0f0f12] border border-[#27272a] rounded-lg px-4 py-2 focus-within:border-[#00ff88]/40 transition-colors">
+            <Search size={16} className="text-[#52525b] flex-shrink-0" />
+            <input className="flex-1 bg-transparent text-sm text-[#e4e4e7] placeholder-[#3f3f46] font-mono outline-none"
+              placeholder='"orange truck"  "person in red jacket"  "dog walking"'
               value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && doSearch()} />
+            {query && <button onClick={() => setQuery('')} className="text-[#52525b] hover:text-[#a1a1aa] text-xs font-mono">ESC</button>}
           </div>
           <button onClick={doSearch} disabled={searching}
-            className="px-3 py-1 bg-[#00ff88] text-[#060608] text-[11px] font-mono font-bold rounded-md hover:bg-[#00ee7d] transition disabled:opacity-30 tracking-wider">
+            className="px-5 py-2 bg-[#00ff88] text-[#09090b] text-sm font-mono font-bold rounded-lg hover:bg-[#00ee7d] transition disabled:opacity-30 tracking-wide">
             {searching ? '...' : 'SEARCH'}
           </button>
         </div>
       </div>
 
-      {/* ═══ Body ═══ */}
-      <div className="flex-1 flex min-h-0">
+      {/* ═══ BODY ═══ */}
+      <div className="flex-1 flex min-h-0 overflow-hidden">
 
-        {/* ── Main panel ── */}
+        {/* LEFT PANEL */}
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
 
-          {/* Camera filmstrip — compact horizontal */}
-          <div className="flex-shrink-0 flex gap-1 px-3 py-1.5 bg-[#08080b] border-b border-[#1a1a1f] overflow-x-auto">
-            {cameras.map(c => (
+          {/* Camera strip */}
+          <div className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 bg-[#09090b] border-b border-[#18181b] overflow-x-auto">
+            {cameras.map((c, i) => (
               <div key={c.camera_id} onClick={() => { setCam(c.camera_id); setSelIdx(-1) }}
-                className={`cam-tile relative cursor-pointer rounded-[3px] overflow-hidden border flex-shrink-0 w-[120px] ${
-                  cam === c.camera_id ? 'border-[#00ff88]/50 glow-sm' : 'border-[#1a1a1f]'
-                }`}>
-                <video src={`/videos/${c.clip_name}`} autoPlay loop muted playsInline className="w-full h-[56px] object-cover" />
+                className={`cam-tile relative cursor-pointer rounded overflow-hidden border flex-shrink-0 ${
+                  cam === c.camera_id ? 'border-[#00ff88]/60 glow-sm' : 'border-[#27272a] hover:border-[#3f3f46]'
+                }`} style={{ width: 130 }}>
+                <video src={`/videos/${c.clip_name}`} autoPlay loop muted playsInline className="w-full h-[68px] object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
-                <div className="absolute bottom-0 inset-x-0 px-1 py-px flex justify-between items-center">
-                  <span className="font-mono text-[7px] font-bold text-[#00ff88] tracking-wider">{c.camera_id.toUpperCase()}</span>
-                  <div className="flex items-center gap-0.5"><div className="w-[3px] h-[3px] rounded-full bg-red-500 anim-blink" /><span className="font-mono text-[6px] text-red-400/60">REC</span></div>
+                <div className="absolute bottom-0 inset-x-0 px-2 py-0.5 flex justify-between items-center">
+                  <span className="font-mono text-[10px] font-bold text-[#00ff88]">{c.camera_id.toUpperCase()}</span>
+                  <div className="flex items-center gap-0.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-500 anim-blink" />
+                    <span className="font-mono text-[8px] text-red-400/70">REC</span>
+                  </div>
                 </div>
                 {results.some(r => r.camera_id === c.camera_id) && (
-                  <div className="absolute top-0.5 right-0.5"><Zap size={8} className="text-[#00ff88] drop-shadow-[0_0_3px_rgba(0,255,136,0.6)]" /></div>
+                  <div className="absolute top-1 right-1"><Zap size={10} className="text-[#00ff88] drop-shadow-[0_0_4px_rgba(0,255,136,0.5)]" /></div>
                 )}
+                {/* Number hint */}
+                <div className="absolute top-1 left-1 font-mono text-[8px] text-[#3f3f46]">{i + 1}</div>
               </div>
             ))}
           </div>
 
-          {/* ── Video viewer (HERO) ── */}
-          <div ref={boxRef} className={`flex-1 relative bg-[#040406] scanline overflow-hidden ${fullscreen ? 'fixed inset-0 z-40' : ''}`}>
+          {/* VIDEO VIEWER */}
+          <div ref={boxRef} className={`flex-1 relative bg-[#040406] overflow-hidden ${fullscreen ? 'fixed inset-0 z-40' : ''}`}>
             {cam ? (
               <>
                 <video ref={vidRef} key={cam}
@@ -293,72 +266,83 @@ export default function App() {
                   onLoadedMetadata={() => { syncRect(); if (hit && vidRef.current && cam === hit.camera_id) vidRef.current.currentTime = hit.timestamp }}
                 />
 
-                {/* Bboxes */}
+                {/* Bounding boxes */}
                 {config.show_bboxes && boxes.map((b, i) => {
                   const s = toStyle(b); if (!s) return null
                   return (
                     <div key={i} className="absolute bbox-bracket pointer-events-none"
-                      style={{ ...s, transition: 'left 80ms linear, top 80ms linear, width 80ms linear, height 80ms linear', boxShadow: '0 0 8px rgba(0,255,136,0.18)' }}>
+                      style={{ ...s, transition: 'left 80ms linear, top 80ms linear, width 80ms linear, height 80ms linear', boxShadow: '0 0 8px rgba(0,255,136,0.15)' }}>
                       <span className="bbox-bracket-tr" /><span className="bbox-bracket-bl" />
-                      <span className="absolute -top-3.5 left-0 font-mono text-[8px] bg-[#060608]/80 backdrop-blur-sm text-[#00ff88] px-1 py-px border border-[#00ff88]/20 rounded-sm whitespace-nowrap">
+                      <span className="absolute -top-5 left-0 font-mono text-[10px] bg-black/80 backdrop-blur-sm text-[#00ff88] px-1.5 py-0.5 rounded border border-[#00ff88]/25 whitespace-nowrap">
                         {b.cls} {(b.conf * 100).toFixed(0)}%
                       </span>
                     </div>
                   )
                 })}
 
-                {/* HUD overlays */}
-                <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
-                  <div className="flex items-center gap-1 bg-[#060608]/70 backdrop-blur-sm border border-[#1a1a1f] rounded px-1.5 py-0.5">
-                    <Camera size={8} className="text-[#00ff88]" />
-                    <span className="font-mono text-[8px] font-bold text-[#00ff88] tracking-wider">{cam.toUpperCase()}</span>
+                {/* HUD: camera + time + fullscreen */}
+                <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
+                  <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-sm border border-[#27272a] rounded-md px-2 py-1">
+                    <Camera size={11} className="text-[#00ff88]" />
+                    <span className="font-mono text-[11px] font-bold text-[#00ff88]">{cam.toUpperCase()}</span>
+                    <span className="font-mono text-[11px] text-[#52525b] tabular-nums ml-1">{fmt(videoTime)}</span>
                   </div>
-                  <div className="bg-[#060608]/70 backdrop-blur-sm border border-[#1a1a1f] rounded px-1.5 py-0.5">
-                    <span className="font-mono text-[8px] text-[#52525b] tabular-nums">
-                      {Math.floor(videoTime / 60).toString().padStart(2, '0')}:{Math.floor(videoTime % 60).toString().padStart(2, '0')}.{Math.floor((videoTime % 1) * 10)}
-                    </span>
-                  </div>
-                  <button onClick={() => setFullscreen(f => !f)} className="bg-[#060608]/70 backdrop-blur-sm border border-[#1a1a1f] rounded px-1 py-0.5 text-[#3f3f46] hover:text-[#00ff88] transition" title="Fullscreen (F)">
-                    <Eye size={8} />
+                  <button onClick={() => setFullscreen(f => !f)}
+                    className="bg-black/60 backdrop-blur-sm border border-[#27272a] rounded-md p-1 text-[#52525b] hover:text-[#00ff88] transition">
+                    {fullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
                   </button>
                 </div>
 
-                {hit && cam === hit.camera_id && (
-                  <div className="absolute bottom-2 left-2 flex items-center gap-2 bg-[#060608]/70 backdrop-blur-sm border border-[#1a1a1f] rounded px-2 py-1 z-10">
-                    <span className="font-mono text-[11px] font-bold text-[#00ff88]">{(hit.score * 100).toFixed(1)}%</span>
-                    <span className="w-px h-3 bg-[#27272a]" />
-                    <span className="font-mono text-[9px] text-[#52525b]">{hit.timestamp.toFixed(1)}s</span>
-                    {hit.detections.length > 0 && <span className="font-mono text-[9px] text-[#3f3f46]">{hit.detections.length} det</span>}
+                {/* Caption */}
+                {config.show_captions && hit && cam === hit.camera_id && hit.caption && (
+                  <div className="absolute top-3 left-3 max-w-md bg-black/60 backdrop-blur-sm border border-[#27272a] rounded-md px-3 py-1.5 z-10">
+                    <p className="text-[11px] text-[#a1a1aa] leading-relaxed">{hit.caption.length > 200 ? hit.caption.slice(0, 200) + '...' : hit.caption}</p>
                   </div>
                 )}
 
-                {config.show_captions && hit && cam === hit.camera_id && hit.caption && (
-                  <div className="absolute top-2 left-2 max-w-sm bg-[#060608]/70 backdrop-blur-sm border border-[#1a1a1f] rounded px-2 py-1 z-10">
-                    <p className="font-mono text-[8px] text-[#a1a1aa] leading-relaxed">{hit.caption.length > 160 ? hit.caption.slice(0, 160) + '...' : hit.caption}</p>
+                {/* Match info */}
+                {hit && cam === hit.camera_id && (
+                  <div className="absolute bottom-3 left-3 flex items-center gap-3 bg-black/70 backdrop-blur-sm border border-[#27272a] rounded-md px-3 py-1.5 z-10">
+                    <span className="font-mono text-sm font-bold text-[#00ff88]">{(hit.score * 100).toFixed(1)}%</span>
+                    <span className="w-px h-4 bg-[#27272a]" />
+                    <span className="font-mono text-xs text-[#71717a]">{hit.timestamp.toFixed(1)}s</span>
+                    {hit.detections.length > 0 && (
+                      <span className="font-mono text-xs text-[#52525b]">{hit.detections.length} detections</span>
+                    )}
                   </div>
                 )}
               </>
             ) : (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-                <Eye size={32} className="text-[#1a1a1f]" />
-                <span className="font-mono text-[10px] text-[#27272a] tracking-wider">SELECT CAMERA OR SEARCH</span>
+              /* Empty state — show camera grid larger */
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
+                <Eye size={40} className="text-[#18181b]" />
+                <div className="text-center">
+                  <p className="text-sm text-[#3f3f46] mb-1">Select a camera or search to begin</p>
+                  <p className="text-xs text-[#27272a]">Press <kbd className="font-mono bg-[#18181b] px-1.5 py-0.5 rounded text-[#52525b]">/</kbd> to search or <kbd className="font-mono bg-[#18181b] px-1.5 py-0.5 rounded text-[#52525b]">1-8</kbd> to select a camera</p>
+                </div>
               </div>
             )}
           </div>
 
           {/* Results strip */}
           {results.length > 0 && (
-            <div className="flex-shrink-0 px-3 py-1 bg-[#08080b] border-t border-[#1a1a1f]">
-              <div className="flex items-center gap-2 mb-0.5">
-                <span className="font-mono text-[8px] text-[#3f3f46] tracking-wider uppercase">{results.length} hits</span>
-                <span className="font-mono text-[8px] text-[#00ff88]">"{query}"</span>
+            <div className="flex-shrink-0 px-4 py-2 bg-[#09090b] border-t border-[#18181b]">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="font-mono text-[10px] text-[#52525b] uppercase tracking-wider">{results.length} results for</span>
+                <span className="font-mono text-xs text-[#00ff88] font-semibold">"{query}"</span>
+                <span className="font-mono text-[10px] text-[#3f3f46] ml-auto">Use arrow keys to navigate</span>
               </div>
-              <div className="flex gap-1 overflow-x-auto pb-0.5">
+              <div className="flex gap-1.5 overflow-x-auto pb-1">
                 {results.map((r, i) => (
                   <button key={i} onClick={() => pickResult(i)}
-                    className={`result-pill flex-shrink-0 rounded-[3px] border px-2 py-0.5 ${selIdx === i ? 'active' : 'border-[#1a1a1f]'}`}>
-                    <span className="font-mono text-[9px] font-semibold text-[#a1a1aa]">{r.camera_id.toUpperCase()}</span>
-                    <span className={`font-mono text-[8px] ml-1.5 ${selIdx === i ? 'text-[#00ff88]' : 'text-[#3f3f46]'}`}>{(r.score * 100).toFixed(0)}%</span>
+                    className={`result-pill flex-shrink-0 rounded-md border px-3 py-1.5 text-left min-w-[90px] ${selIdx === i ? 'active' : 'border-[#27272a]'}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-[#d4d4d8]">{r.camera_id.toUpperCase()}</span>
+                      <span className={`font-mono text-[11px] font-semibold ${selIdx === i ? 'text-[#00ff88]' : 'text-[#52525b]'}`}>{(r.score * 100).toFixed(0)}%</span>
+                    </div>
+                    <div className="font-mono text-[10px] text-[#3f3f46] mt-0.5">
+                      {r.timestamp.toFixed(1)}s{r.detections.length > 0 ? ` / ${r.detections.length} det` : ''}
+                    </div>
                   </button>
                 ))}
               </div>
@@ -366,208 +350,186 @@ export default function App() {
           )}
         </div>
 
-        {/* ── Sidebar ── */}
-        <div className="w-64 flex-shrink-0 border-l border-[#1a1a1f] flex flex-col bg-[#08080b]">
+        {/* ═══ RIGHT SIDEBAR ═══ */}
+        <div className="w-80 flex-shrink-0 border-l border-[#18181b] flex flex-col bg-[#09090b] overflow-hidden">
 
-          {/* Alerts */}
-          <div className="flex-1 flex flex-col border-b border-[#1a1a1f] min-h-0">
-            <div className="flex-shrink-0 px-3 py-1.5 flex items-center gap-1.5 border-b border-[#1a1a1f]">
-              <Shield size={10} className="text-[#00ff88]" />
-              <span className="font-mono text-[9px] font-bold tracking-[0.15em] uppercase">Alerts</span>
-              {alerts.length > 0 && <span className="ml-auto font-mono text-[7px] bg-[#00ff88]/10 text-[#00ff88] px-1 rounded-full">{alerts.length}</span>}
+          {/* ALERTS */}
+          <div className="flex-1 flex flex-col border-b border-[#18181b] min-h-0 overflow-hidden">
+            <div className="flex-shrink-0 px-4 py-2 flex items-center gap-2 border-b border-[#18181b]">
+              <Shield size={13} className="text-[#00ff88]" />
+              <span className="text-xs font-semibold tracking-wider uppercase">Alerts</span>
+              {alerts.length > 0 && <span className="ml-auto font-mono text-[10px] bg-[#00ff88]/10 text-[#00ff88] px-2 py-0.5 rounded-full">{alerts.length}</span>}
             </div>
-            <div className="flex-shrink-0 px-2 py-1">
-              <div className="flex gap-0.5">
-                <input className="flex-1 bg-[#0c0c0f] border border-[#1a1a1f] rounded-[3px] px-1.5 py-0.5 text-[9px] font-mono text-[#d4d4d8] focus:border-[#00ff88]/25 transition"
-                  placeholder="person with bag..." value={alertQ} onChange={e => setAlertQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && addAlert()} />
-                <button onClick={addAlert} className="px-1 bg-[#00ff88] text-[#060608] rounded-[3px] text-[9px] font-bold">+</button>
+
+            <div className="flex-shrink-0 px-4 py-2">
+              <div className="flex gap-1.5">
+                <input className="flex-1 bg-[#0f0f12] border border-[#27272a] rounded-md px-3 py-1.5 text-xs font-mono text-[#d4d4d8] placeholder-[#3f3f46] focus:border-[#00ff88]/30 transition outline-none"
+                  placeholder="Watch for: person with bag..." value={alertQ} onChange={e => setAlertQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && addAlert()} />
+                <button onClick={addAlert} className="px-2.5 py-1.5 bg-[#00ff88] text-[#09090b] rounded-md text-xs font-bold hover:bg-[#00ee7d] transition">+</button>
               </div>
             </div>
+
             {rules.length > 0 && (
-              <div className="flex-shrink-0 px-2 pb-0.5">
+              <div className="flex-shrink-0 px-4 pb-1.5 space-y-0.5">
+                <p className="text-[10px] text-[#3f3f46] uppercase tracking-wider font-mono">Active rules</p>
                 {rules.map(r => (
-                  <div key={r.id} className="flex items-center py-px group">
-                    <span className="font-mono text-[8px] text-[#52525b] truncate flex-1">{r.query}</span>
-                    <button onClick={() => delRule(r.id)} className="text-[#27272a] hover:text-red-400 opacity-0 group-hover:opacity-100 transition"><Trash2 size={7} /></button>
+                  <div key={r.id} className="flex items-center justify-between py-0.5 group">
+                    <span className="text-xs text-[#71717a] truncate font-mono">{r.query}</span>
+                    <button onClick={() => delRule(r.id)} className="text-[#27272a] hover:text-red-400 ml-2 opacity-0 group-hover:opacity-100 transition"><Trash2 size={11} /></button>
                   </div>
                 ))}
               </div>
             )}
-            <div className="flex-1 overflow-y-auto px-2 min-h-0">
-              {!alerts.length && !rules.length && <p className="font-mono text-[8px] text-[#1a1a1f] text-center mt-3">No alerts configured</p>}
+
+            <div className="flex-1 overflow-y-auto px-4 min-h-0">
+              {!alerts.length && !rules.length && (
+                <p className="text-xs text-[#27272a] text-center mt-4">Register a watch rule to receive notifications</p>
+              )}
               {alerts.map((a, i) => (
-                <div key={i} className="anim-fade-up flex items-start gap-1 py-1 border-b border-[#0f0f12]" style={{ animationDelay: `${i * 30}ms` }}>
-                  <Radio size={7} className="text-[#00ff88] mt-0.5" />
-                  <div className="min-w-0">
-                    <span className="font-mono text-[8px] font-semibold text-[#00ff88]">{a.camera_id.toUpperCase()}</span>
-                    <span className="font-mono text-[7px] text-[#27272a] ml-1">{(a.score * 100).toFixed(0)}%</span>
-                    <p className="font-mono text-[8px] text-[#3f3f46] truncate">{a.query}</p>
+                <div key={i} className="anim-fade-up flex items-start gap-2 py-2 border-b border-[#0f0f12]" style={{ animationDelay: `${i * 40}ms` }}>
+                  <Radio size={11} className="text-[#00ff88] mt-0.5 flex-shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-semibold text-[#00ff88]">{a.camera_id.toUpperCase()}</span>
+                      <span className="font-mono text-[10px] text-[#3f3f46]">{(a.score * 100).toFixed(0)}%</span>
+                    </div>
+                    <p className="text-xs text-[#52525b] truncate">{a.query}</p>
                   </div>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Chat */}
-          <div className="flex-1 flex flex-col min-h-0">
-            <div className="flex-shrink-0 px-3 py-1.5 flex items-center gap-1.5 border-b border-[#1a1a1f]">
-              <MessageSquare size={10} className="text-[#00ff88]" />
-              <span className="font-mono text-[9px] font-bold tracking-[0.15em] uppercase">Analytics</span>
+          {/* ANALYTICS CHAT */}
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <div className="flex-shrink-0 px-4 py-2 flex items-center gap-2 border-b border-[#18181b]">
+              <MessageSquare size={13} className="text-[#00ff88]" />
+              <span className="text-xs font-semibold tracking-wider uppercase">Analytics</span>
             </div>
-            <div className="flex-1 overflow-y-auto px-2 py-1.5 min-h-0">
+
+            <div className="flex-1 overflow-y-auto px-4 py-3 min-h-0">
               {!msgs.length && (
-                <div className="flex flex-col gap-0.5 mt-0.5">
-                  <p className="font-mono text-[7px] text-[#1a1a1f] tracking-wider uppercase mb-0.5">Suggestions</p>
-                  {['How many people in the lobby?', 'What color clothes on cam03?', 'Count vehicles on cam01'].map(q => (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] text-[#3f3f46] font-mono uppercase tracking-wider">Suggested questions</p>
+                  {['How many people in the lobby?', 'What color clothes on cam03?', 'Count vehicles on cam01', 'Describe what happened on cam08'].map(q => (
                     <button key={q} onClick={() => setChatQ(q)}
-                      className="font-mono text-[9px] text-left text-[#52525b] bg-[#0c0c0f] border border-[#1a1a1f] rounded-[3px] px-2 py-1 hover:border-[#27272a] hover:text-[#71717a] transition">
+                      className="block w-full text-left text-xs text-[#71717a] bg-[#0f0f12] border border-[#18181b] rounded-md px-3 py-2 hover:border-[#27272a] hover:text-[#a1a1aa] transition">
                       {q}
                     </button>
                   ))}
                 </div>
               )}
               {msgs.map((m, i) => (
-                <div key={i} className={`anim-fade-up mb-1 ${m.role === 'user' ? 'text-right' : ''}`} style={{ animationDelay: '50ms' }}>
-                  <div className={`inline-block rounded-md px-2 py-1 text-[9px] font-mono leading-relaxed max-w-[95%] ${
+                <div key={i} className={`anim-fade-up mb-2 ${m.role === 'user' ? 'text-right' : ''}`}>
+                  <div className={`inline-block rounded-lg px-3 py-2 text-xs leading-relaxed max-w-[95%] ${
                     m.role === 'user'
-                      ? 'bg-[#00ff88]/5 text-[#00ff88] border border-[#00ff88]/10'
-                      : 'bg-[#0c0c0f] text-[#a1a1aa] border border-[#1a1a1f]'
+                      ? 'bg-[#00ff88]/8 text-[#00ff88] border border-[#00ff88]/15'
+                      : 'bg-[#0f0f12] text-[#a1a1aa] border border-[#18181b]'
                   }`}>{m.content}</div>
                 </div>
               ))}
               {chatBusy && (
-                <div className="anim-fade-in mb-1">
-                  <div className="inline-block rounded-md px-2 py-1 text-[9px] font-mono bg-[#0c0c0f] border border-[#1a1a1f] text-[#3f3f46]">
-                    <span className="loading-dots"><span>.</span><span>.</span><span>.</span></span>
+                <div className="anim-fade-in mb-2">
+                  <div className="inline-block rounded-lg px-3 py-2 text-xs bg-[#0f0f12] border border-[#18181b] text-[#3f3f46]">
+                    <span className="loading-dots font-mono"><span>.</span><span>.</span><span>.</span></span>
                   </div>
                 </div>
               )}
               <div ref={chatEnd} />
             </div>
-            <div className="flex-shrink-0 px-2 py-1 border-t border-[#1a1a1f]">
-              <div className="flex gap-0.5">
-                <input className="flex-1 bg-[#0c0c0f] border border-[#1a1a1f] rounded-[3px] px-1.5 py-1 text-[9px] font-mono text-[#d4d4d8] focus:border-[#00ff88]/25 transition"
-                  placeholder="Ask about footage..." value={chatQ} onChange={e => setChatQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && ask()} />
-                <button onClick={ask} disabled={chatBusy} className="px-1 bg-[#00ff88] text-[#060608] rounded-[3px] disabled:opacity-20 transition"><Send size={9} /></button>
+
+            <div className="flex-shrink-0 px-4 py-2 border-t border-[#18181b]">
+              <div className="flex gap-1.5">
+                <input className="flex-1 bg-[#0f0f12] border border-[#27272a] rounded-md px-3 py-1.5 text-xs font-mono text-[#d4d4d8] placeholder-[#3f3f46] focus:border-[#00ff88]/30 transition outline-none"
+                  placeholder="Ask about the footage..." value={chatQ} onChange={e => setChatQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && ask()} />
+                <button onClick={ask} disabled={chatBusy}
+                  className="px-2 py-1.5 bg-[#00ff88] text-[#09090b] rounded-md disabled:opacity-20 hover:bg-[#00ee7d] transition">
+                  <Send size={12} />
+                </button>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ═══ Modals ═══ */}
+      {/* ═══ MODALS ═══ */}
       {modal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-[2px] z-50 flex items-center justify-center anim-fade-in" onClick={() => setModal(null)}>
-          <div className="bg-[#0c0c0f] border border-[#1a1a1f] rounded-lg max-w-lg w-full mx-4 anim-fade-up" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-[3px] z-50 flex items-center justify-center anim-fade-in" onClick={() => setModal(null)}>
+          <div className="bg-[#0f0f12] border border-[#27272a] rounded-xl max-w-lg w-full mx-4 shadow-2xl anim-fade-up" onClick={e => e.stopPropagation()}>
             {modal === 'help' ? (
-              <div className="p-5">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="font-mono text-sm font-bold tracking-wider">GETTING STARTED</h2>
-                  <button onClick={() => setModal(null)} className="text-[#3f3f46] hover:text-white transition"><X size={14} /></button>
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-5">
+                  <h2 className="text-base font-bold">Getting Started</h2>
+                  <button onClick={() => setModal(null)} className="text-[#52525b] hover:text-white transition"><X size={16} /></button>
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {[
-                    { icon: <Search size={12} />, title: 'SEARCH', desc: 'Type natural language queries to find objects, people, or events across all cameras.',
-                      examples: ['"orange truck"', '"person in red jacket"', '"dog"', '"handshake"'] },
-                    { icon: <Camera size={12} />, title: 'CAMERAS', desc: 'Click any thumbnail to view full-size. Matching cameras show a bolt icon after search. Click result cards to jump between matches.',
-                      examples: [] },
-                    { icon: <Shield size={12} />, title: 'ALERTS', desc: 'Set watchlists to get notified when matching objects appear. Alerts fire instantly when a match is found.',
-                      examples: ['"person with bag"', '"red car"', '"someone taking photo"'] },
-                    { icon: <MessageSquare size={12} />, title: 'ANALYTICS', desc: 'Ask detailed questions about the footage. The AI analyzes scene descriptions, tracking data, and visual details.',
-                      examples: ['"how many people in lobby?"', '"what color clothes on cam03?"', '"describe the vehicles"'] },
+                    { icon: <Search size={14} />, title: 'Search', desc: 'Type natural language queries to find objects, people, or events across all cameras.',
+                      ex: ['"orange truck"', '"person in red jacket"', '"dog"', '"handshake"'] },
+                    { icon: <Camera size={14} />, title: 'Cameras', desc: 'Click any thumbnail or press 1-8 to view a feed. Matching cameras show a bolt icon after search.',
+                      ex: [] },
+                    { icon: <Shield size={14} />, title: 'Alerts', desc: 'Set watchlists to get notified when matching objects appear in any camera feed.',
+                      ex: ['"person with bag"', '"red car"'] },
+                    { icon: <MessageSquare size={14} />, title: 'Analytics', desc: 'Ask detailed questions. The AI analyzes scene descriptions, tracking data, and clothing colors.',
+                      ex: ['"what color clothes?"', '"count vehicles"'] },
                   ].map(s => (
                     <div key={s.title} className="flex gap-3">
-                      <div className="mt-0.5 text-[#00ff88]">{s.icon}</div>
+                      <div className="mt-0.5 text-[#00ff88] flex-shrink-0">{s.icon}</div>
                       <div>
-                        <h3 className="font-mono text-[9px] font-bold text-[#00ff88] tracking-[0.15em] mb-0.5">{s.title}</h3>
-                        <p className="text-[11px] text-[#71717a] leading-relaxed">{s.desc}</p>
-                        {s.examples.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {s.examples.map(ex => (
-                              <span key={ex} className="font-mono text-[9px] bg-[#0c0c0f] border border-[#1a1a1f] text-[#52525b] px-1.5 py-0.5 rounded">{ex}</span>
-                            ))}
+                        <h3 className="text-xs font-bold text-[#00ff88] mb-0.5">{s.title}</h3>
+                        <p className="text-xs text-[#71717a] leading-relaxed">{s.desc}</p>
+                        {s.ex.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {s.ex.map(e => <span key={e} className="font-mono text-[10px] bg-[#18181b] text-[#52525b] px-2 py-0.5 rounded">{e}</span>)}
                           </div>
                         )}
                       </div>
                     </div>
                   ))}
-                  <div className="pt-3 mt-3 border-t border-[#1a1a1f]">
-                    <h3 className="font-mono text-[9px] font-bold text-[#3f3f46] tracking-[0.15em] mb-1">QUICK START</h3>
-                    <ol className="text-[10px] text-[#52525b] space-y-1 list-decimal list-inside">
-                      <li>Type a search query and press Enter</li>
-                      <li>Click a result card to view the matching frame</li>
-                      <li>Bounding boxes track detected objects in real-time</li>
-                      <li>Ask follow-up questions in Analytics Chat</li>
-                      <li>Set alerts for ongoing monitoring</li>
-                    </ol>
-                  </div>
-                  <div className="pt-3 mt-3 border-t border-[#1a1a1f]">
-                    <h3 className="font-mono text-[9px] font-bold text-[#3f3f46] tracking-[0.15em] mb-1">KEYBOARD SHORTCUTS</h3>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[9px]">
-                      {[
-                        ['/', 'Focus search'], ['F', 'Fullscreen video'], ['H', 'Help'],
-                        ['S', 'Settings'], ['1-8', 'Select camera'], ['Esc', 'Close/exit'],
-                        ['\u2190 \u2192', 'Navigate results'],
-                      ].map(([k, d]) => (
+                  <div className="pt-4 mt-4 border-t border-[#18181b]">
+                    <h3 className="text-xs font-bold text-[#52525b] mb-2">Keyboard Shortcuts</h3>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[['/', 'Search'], ['F', 'Fullscreen'], ['H', 'Help'], [',', 'Settings'], ['1-8', 'Camera'], ['\u2190 \u2192', 'Results'], ['Esc', 'Close']].map(([k, d]) => (
                         <div key={k} className="flex items-center gap-2">
-                          <kbd className="font-mono text-[8px] bg-[#1a1a1f] text-[#52525b] px-1 py-px rounded min-w-[20px] text-center">{k}</kbd>
-                          <span className="text-[#3f3f46]">{d}</span>
+                          <kbd className="font-mono text-[10px] bg-[#18181b] text-[#52525b] px-1.5 py-0.5 rounded min-w-[24px] text-center">{k}</kbd>
+                          <span className="text-xs text-[#3f3f46]">{d}</span>
                         </div>
                       ))}
                     </div>
                   </div>
-                  <div className="pt-3 mt-3 border-t border-[#1a1a1f]">
-                    <p className="font-mono text-[8px] text-[#27272a] leading-relaxed">SigLIP search / YOLO-World + ByteTrack detection / Florence-2 grounding / MiniCPM-V scene analysis / Ollama LLM. All models run locally, zero cloud dependency.</p>
-                  </div>
+                  <p className="text-[10px] text-[#27272a] mt-3">SigLIP / YOLO-World / ByteTrack / Florence-2 / MiniCPM-V / Ollama. All local, zero cloud.</p>
                 </div>
               </div>
             ) : (
-              <div className="p-5">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="font-mono text-sm font-bold tracking-wider">SETTINGS</h2>
-                  <button onClick={() => setModal(null)} className="text-[#3f3f46] hover:text-white transition"><X size={14} /></button>
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-5">
+                  <h2 className="text-base font-bold">Settings</h2>
+                  <button onClick={() => setModal(null)} className="text-[#52525b] hover:text-white transition"><X size={16} /></button>
                 </div>
-                <div className="space-y-0">
-                  {/* Toggle: Bounding boxes */}
-                  <div className="flex items-center justify-between py-2.5 border-b border-[#0f0f12]">
-                    <span className="text-[11px] text-[#71717a]">Bounding boxes</span>
-                    <button onClick={() => updateConfig('show_bboxes', !config.show_bboxes)}
-                      className={`font-mono text-[10px] font-bold px-2 py-0.5 rounded transition ${config.show_bboxes ? 'bg-[#00ff88]/15 text-[#00ff88]' : 'bg-[#1a1a1f] text-[#3f3f46]'}`}>
-                      {config.show_bboxes ? 'ON' : 'OFF'}
-                    </button>
-                  </div>
-                  {/* Toggle: Captions */}
-                  <div className="flex items-center justify-between py-2.5 border-b border-[#0f0f12]">
-                    <span className="text-[11px] text-[#71717a]">Caption overlay</span>
-                    <button onClick={() => updateConfig('show_captions', !config.show_captions)}
-                      className={`font-mono text-[10px] font-bold px-2 py-0.5 rounded transition ${config.show_captions ? 'bg-[#00ff88]/15 text-[#00ff88]' : 'bg-[#1a1a1f] text-[#3f3f46]'}`}>
-                      {config.show_captions ? 'ON' : 'OFF'}
-                    </button>
-                  </div>
-                  {/* Search count */}
-                  <div className="flex items-center justify-between py-2.5 border-b border-[#0f0f12]">
-                    <span className="text-[11px] text-[#71717a]">Search results</span>
+                <div className="space-y-1">
+                  <SettingToggle label="Bounding boxes" value={config.show_bboxes} onToggle={() => updateConfig('show_bboxes', !config.show_bboxes)} />
+                  <SettingToggle label="Caption overlay" value={config.show_captions} onToggle={() => updateConfig('show_captions', !config.show_captions)} />
+                  <div className="flex items-center justify-between py-3 border-b border-[#18181b]">
+                    <span className="text-sm text-[#a1a1aa]">Search results</span>
                     <select value={config.search_top_k} onChange={e => updateConfig('search_top_k', Number(e.target.value))}
-                      className="bg-[#0c0c0f] border border-[#1a1a1f] text-[10px] font-mono text-[#71717a] rounded px-1.5 py-0.5 outline-none">
+                      className="bg-[#18181b] border border-[#27272a] text-xs font-mono text-[#a1a1aa] rounded-md px-2 py-1 outline-none">
                       <option value={5}>5</option><option value={10}>10</option><option value={20}>20</option>
                     </select>
                   </div>
-                  {/* Bbox confidence */}
-                  <div className="flex items-center justify-between py-2.5 border-b border-[#0f0f12]">
-                    <span className="text-[11px] text-[#71717a]">Min bbox confidence</span>
+                  <div className="flex items-center justify-between py-3 border-b border-[#18181b]">
+                    <span className="text-sm text-[#a1a1aa]">Min detection confidence</span>
                     <select value={config.bbox_min_confidence} onChange={e => updateConfig('bbox_min_confidence', Number(e.target.value))}
-                      className="bg-[#0c0c0f] border border-[#1a1a1f] text-[10px] font-mono text-[#71717a] rounded px-1.5 py-0.5 outline-none">
+                      className="bg-[#18181b] border border-[#27272a] text-xs font-mono text-[#a1a1aa] rounded-md px-2 py-1 outline-none">
                       <option value={0.25}>25%</option><option value={0.35}>35%</option><option value={0.5}>50%</option><option value={0.7}>70%</option>
                     </select>
                   </div>
-                  {/* Models (read-only info) */}
-                  <div className="flex items-center justify-between py-2.5 border-b border-[#0f0f12]">
-                    <span className="text-[11px] text-[#71717a]">Vision model</span>
-                    <span className="font-mono text-[10px] text-[#52525b]">{config.vision_model}</span>
+                  <div className="flex items-center justify-between py-3 border-b border-[#18181b]">
+                    <span className="text-sm text-[#a1a1aa]">Vision model</span>
+                    <span className="font-mono text-xs text-[#52525b]">{config.vision_model}</span>
                   </div>
-                  <div className="flex items-center justify-between py-2.5">
-                    <span className="text-[11px] text-[#71717a]">LLM model</span>
-                    <span className="font-mono text-[10px] text-[#52525b]">{config.llm_model}</span>
+                  <div className="flex items-center justify-between py-3">
+                    <span className="text-sm text-[#a1a1aa]">LLM model</span>
+                    <span className="font-mono text-xs text-[#52525b]">{config.llm_model}</span>
                   </div>
                 </div>
               </div>
@@ -575,6 +537,18 @@ export default function App() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function SettingToggle({ label, value, onToggle }: { label: string; value: boolean; onToggle: () => void }) {
+  return (
+    <div className="flex items-center justify-between py-3 border-b border-[#18181b]">
+      <span className="text-sm text-[#a1a1aa]">{label}</span>
+      <button onClick={onToggle}
+        className={`relative w-9 h-5 rounded-full transition-colors ${value ? 'bg-[#00ff88]' : 'bg-[#27272a]'}`}>
+        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${value ? 'translate-x-4' : 'translate-x-0.5'}`} />
+      </button>
     </div>
   )
 }
