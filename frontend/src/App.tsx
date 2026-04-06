@@ -38,6 +38,11 @@ export default function App() {
   const [chatBusy, setChatBusy] = useState(false)
   const [clock, setClock] = useState(new Date())
   const [modal, setModal] = useState<'help' | 'settings' | null>(null)
+  const [config, setConfig] = useState({
+    show_bboxes: true, show_captions: true, search_top_k: 10,
+    alert_threshold: 0.07, bbox_min_confidence: 0.35,
+    vision_model: 'minicpm-v', llm_model: 'llama3.2:3b',
+  })
 
   const ws = useRef<WebSocket | null>(null)
   const vidRef = useRef<HTMLVideoElement | null>(null)
@@ -49,6 +54,8 @@ export default function App() {
   const [tracks, setTracks] = useState<TrackDet[]>([])
   const [boxes, setBoxes] = useState<{ x1: number; y1: number; x2: number; y2: number; cls: string; conf: number }[]>([])
   const raf = useRef(0)
+  const [videoTime, setVideoTime] = useState(0)
+  const [fullscreen, setFullscreen] = useState(false)
 
   // ─── Video rect calculation (accounts for object-contain letterboxing) ───
 
@@ -68,7 +75,38 @@ export default function App() {
   // ─── Effects ───
 
   useEffect(() => { const t = setInterval(() => setClock(new Date()), 1000); return () => clearInterval(t) }, [])
-  useEffect(() => { fetch(`${API}/cameras`).then(r => r.json()).then(setCameras).catch(() => {}); loadRules() }, [])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement) return
+      if (e.key === '?' || (e.key === 'h' && !e.ctrlKey)) { setModal('help'); e.preventDefault() }
+      if (e.key === ',' || e.key === 's') { setModal('settings'); e.preventDefault() }
+      if (e.key === 'Escape') { setModal(null); setFullscreen(false) }
+      if (e.key === 'f') { setFullscreen(p => !p); e.preventDefault() }
+      if (e.key === '/' || e.key === 'k') { document.querySelector<HTMLInputElement>('input')?.focus(); e.preventDefault() }
+      // Arrow keys to navigate results
+      if (e.key === 'ArrowRight' && results.length > 0) { pickResult(Math.min(selIdx + 1, results.length - 1)); e.preventDefault() }
+      if (e.key === 'ArrowLeft' && results.length > 0) { pickResult(Math.max(selIdx - 1, 0)); e.preventDefault() }
+      // Number keys 1-8 to select cameras
+      const num = parseInt(e.key); if (num >= 1 && num <= cameras.length) { setCam(cameras[num - 1].camera_id); setSelIdx(-1) }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [results, selIdx, cameras])
+
+  // Track video time
+  useEffect(() => {
+    const v = vidRef.current; if (!v) return
+    const update = () => setVideoTime(v.currentTime)
+    v.addEventListener('timeupdate', update)
+    return () => v.removeEventListener('timeupdate', update)
+  })
+  useEffect(() => {
+    fetch(`${API}/cameras`).then(r => r.json()).then(setCameras).catch(() => {})
+    fetch(`${API}/settings`).then(r => r.json()).then(setConfig).catch(() => {})
+    loadRules()
+  }, [])
   useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs])
 
   useEffect(() => {
@@ -129,6 +167,14 @@ export default function App() {
   // ─── Helpers ───
 
   const loadRules = async () => { try { setRules(await (await fetch(`${API}/alerts/rules`)).json()) } catch {} }
+
+  const updateConfig = async (key: string, value: string | number | boolean) => {
+    setConfig(prev => ({ ...prev, [key]: value }))
+    await fetch(`${API}/settings`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, value }),
+    }).catch(() => {})
+  }
 
   const doSearch = async () => {
     if (!query.trim()) return; setSearching(true)
@@ -237,7 +283,7 @@ export default function App() {
           </div>
 
           {/* ── Video viewer (HERO) ── */}
-          <div ref={boxRef} className="flex-1 relative bg-[#040406] scanline overflow-hidden">
+          <div ref={boxRef} className={`flex-1 relative bg-[#040406] scanline overflow-hidden ${fullscreen ? 'fixed inset-0 z-40' : ''}`}>
             {cam ? (
               <>
                 <video ref={vidRef} key={cam}
@@ -248,7 +294,7 @@ export default function App() {
                 />
 
                 {/* Bboxes */}
-                {boxes.map((b, i) => {
+                {config.show_bboxes && boxes.map((b, i) => {
                   const s = toStyle(b); if (!s) return null
                   return (
                     <div key={i} className="absolute bbox-bracket pointer-events-none"
@@ -262,9 +308,19 @@ export default function App() {
                 })}
 
                 {/* HUD overlays */}
-                <div className="absolute top-2 right-2 flex items-center gap-1 bg-[#060608]/70 backdrop-blur-sm border border-[#1a1a1f] rounded px-1.5 py-0.5 z-10">
-                  <Camera size={8} className="text-[#00ff88]" />
-                  <span className="font-mono text-[8px] font-bold text-[#00ff88] tracking-wider">{cam.toUpperCase()}</span>
+                <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
+                  <div className="flex items-center gap-1 bg-[#060608]/70 backdrop-blur-sm border border-[#1a1a1f] rounded px-1.5 py-0.5">
+                    <Camera size={8} className="text-[#00ff88]" />
+                    <span className="font-mono text-[8px] font-bold text-[#00ff88] tracking-wider">{cam.toUpperCase()}</span>
+                  </div>
+                  <div className="bg-[#060608]/70 backdrop-blur-sm border border-[#1a1a1f] rounded px-1.5 py-0.5">
+                    <span className="font-mono text-[8px] text-[#52525b] tabular-nums">
+                      {Math.floor(videoTime / 60).toString().padStart(2, '0')}:{Math.floor(videoTime % 60).toString().padStart(2, '0')}.{Math.floor((videoTime % 1) * 10)}
+                    </span>
+                  </div>
+                  <button onClick={() => setFullscreen(f => !f)} className="bg-[#060608]/70 backdrop-blur-sm border border-[#1a1a1f] rounded px-1 py-0.5 text-[#3f3f46] hover:text-[#00ff88] transition" title="Fullscreen (F)">
+                    <Eye size={8} />
+                  </button>
                 </div>
 
                 {hit && cam === hit.camera_id && (
@@ -276,7 +332,7 @@ export default function App() {
                   </div>
                 )}
 
-                {hit && cam === hit.camera_id && hit.caption && (
+                {config.show_captions && hit && cam === hit.camera_id && hit.caption && (
                   <div className="absolute top-2 left-2 max-w-sm bg-[#060608]/70 backdrop-blur-sm border border-[#1a1a1f] rounded px-2 py-1 z-10">
                     <p className="font-mono text-[8px] text-[#a1a1aa] leading-relaxed">{hit.caption.length > 160 ? hit.caption.slice(0, 160) + '...' : hit.caption}</p>
                   </div>
@@ -411,21 +467,57 @@ export default function App() {
                 </div>
                 <div className="space-y-3">
                   {[
-                    { icon: <Search size={12} />, title: 'SEARCH', desc: 'Type natural language: "find the orange truck", "person in red jacket". AI searches all camera feeds simultaneously.' },
-                    { icon: <Camera size={12} />, title: 'CAMERAS', desc: 'Click any camera thumbnail to view its feed full-size. Search results highlight matching cameras with a bolt icon.' },
-                    { icon: <Shield size={12} />, title: 'ALERTS', desc: 'Register watchlists like "person with bag" to get real-time notifications when matching objects appear in any feed.' },
-                    { icon: <MessageSquare size={12} />, title: 'ANALYTICS', desc: 'Ask questions about footage: "what color is the car?", "how many people?". AI analyzes scene descriptions and tracking data.' },
+                    { icon: <Search size={12} />, title: 'SEARCH', desc: 'Type natural language queries to find objects, people, or events across all cameras.',
+                      examples: ['"orange truck"', '"person in red jacket"', '"dog"', '"handshake"'] },
+                    { icon: <Camera size={12} />, title: 'CAMERAS', desc: 'Click any thumbnail to view full-size. Matching cameras show a bolt icon after search. Click result cards to jump between matches.',
+                      examples: [] },
+                    { icon: <Shield size={12} />, title: 'ALERTS', desc: 'Set watchlists to get notified when matching objects appear. Alerts fire instantly when a match is found.',
+                      examples: ['"person with bag"', '"red car"', '"someone taking photo"'] },
+                    { icon: <MessageSquare size={12} />, title: 'ANALYTICS', desc: 'Ask detailed questions about the footage. The AI analyzes scene descriptions, tracking data, and visual details.',
+                      examples: ['"how many people in lobby?"', '"what color clothes on cam03?"', '"describe the vehicles"'] },
                   ].map(s => (
                     <div key={s.title} className="flex gap-3">
                       <div className="mt-0.5 text-[#00ff88]">{s.icon}</div>
                       <div>
                         <h3 className="font-mono text-[9px] font-bold text-[#00ff88] tracking-[0.15em] mb-0.5">{s.title}</h3>
                         <p className="text-[11px] text-[#71717a] leading-relaxed">{s.desc}</p>
+                        {s.examples.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {s.examples.map(ex => (
+                              <span key={ex} className="font-mono text-[9px] bg-[#0c0c0f] border border-[#1a1a1f] text-[#52525b] px-1.5 py-0.5 rounded">{ex}</span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
                   <div className="pt-3 mt-3 border-t border-[#1a1a1f]">
-                    <p className="font-mono text-[8px] text-[#27272a] leading-relaxed">SigLIP search / YOLO-World + ByteTrack detection / Florence-2 grounding / MiniCPM-V scene analysis / Ollama LLM. All local, zero cloud.</p>
+                    <h3 className="font-mono text-[9px] font-bold text-[#3f3f46] tracking-[0.15em] mb-1">QUICK START</h3>
+                    <ol className="text-[10px] text-[#52525b] space-y-1 list-decimal list-inside">
+                      <li>Type a search query and press Enter</li>
+                      <li>Click a result card to view the matching frame</li>
+                      <li>Bounding boxes track detected objects in real-time</li>
+                      <li>Ask follow-up questions in Analytics Chat</li>
+                      <li>Set alerts for ongoing monitoring</li>
+                    </ol>
+                  </div>
+                  <div className="pt-3 mt-3 border-t border-[#1a1a1f]">
+                    <h3 className="font-mono text-[9px] font-bold text-[#3f3f46] tracking-[0.15em] mb-1">KEYBOARD SHORTCUTS</h3>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[9px]">
+                      {[
+                        ['/', 'Focus search'], ['F', 'Fullscreen video'], ['H', 'Help'],
+                        ['S', 'Settings'], ['1-8', 'Select camera'], ['Esc', 'Close/exit'],
+                        ['\u2190 \u2192', 'Navigate results'],
+                      ].map(([k, d]) => (
+                        <div key={k} className="flex items-center gap-2">
+                          <kbd className="font-mono text-[8px] bg-[#1a1a1f] text-[#52525b] px-1 py-px rounded min-w-[20px] text-center">{k}</kbd>
+                          <span className="text-[#3f3f46]">{d}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="pt-3 mt-3 border-t border-[#1a1a1f]">
+                    <p className="font-mono text-[8px] text-[#27272a] leading-relaxed">SigLIP search / YOLO-World + ByteTrack detection / Florence-2 grounding / MiniCPM-V scene analysis / Ollama LLM. All models run locally, zero cloud dependency.</p>
                   </div>
                 </div>
               </div>
@@ -436,19 +528,47 @@ export default function App() {
                   <button onClick={() => setModal(null)} className="text-[#3f3f46] hover:text-white transition"><X size={14} /></button>
                 </div>
                 <div className="space-y-0">
-                  {[
-                    { label: 'Bounding boxes', value: 'ON', accent: true },
-                    { label: 'Caption overlay', value: 'ON', accent: true },
-                    { label: 'Search results', value: '10', accent: false },
-                    { label: 'Alert threshold', value: '7%', accent: false },
-                    { label: 'Vision model', value: 'minicpm-v', accent: false },
-                    { label: 'LLM model', value: 'llama3.2:3b', accent: false },
-                  ].map(s => (
-                    <div key={s.label} className="flex items-center justify-between py-2 border-b border-[#0f0f12]">
-                      <span className="text-[11px] text-[#71717a]">{s.label}</span>
-                      <span className={`font-mono text-[10px] font-semibold ${s.accent ? 'text-[#00ff88]' : 'text-[#52525b]'}`}>{s.value}</span>
-                    </div>
-                  ))}
+                  {/* Toggle: Bounding boxes */}
+                  <div className="flex items-center justify-between py-2.5 border-b border-[#0f0f12]">
+                    <span className="text-[11px] text-[#71717a]">Bounding boxes</span>
+                    <button onClick={() => updateConfig('show_bboxes', !config.show_bboxes)}
+                      className={`font-mono text-[10px] font-bold px-2 py-0.5 rounded transition ${config.show_bboxes ? 'bg-[#00ff88]/15 text-[#00ff88]' : 'bg-[#1a1a1f] text-[#3f3f46]'}`}>
+                      {config.show_bboxes ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  {/* Toggle: Captions */}
+                  <div className="flex items-center justify-between py-2.5 border-b border-[#0f0f12]">
+                    <span className="text-[11px] text-[#71717a]">Caption overlay</span>
+                    <button onClick={() => updateConfig('show_captions', !config.show_captions)}
+                      className={`font-mono text-[10px] font-bold px-2 py-0.5 rounded transition ${config.show_captions ? 'bg-[#00ff88]/15 text-[#00ff88]' : 'bg-[#1a1a1f] text-[#3f3f46]'}`}>
+                      {config.show_captions ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  {/* Search count */}
+                  <div className="flex items-center justify-between py-2.5 border-b border-[#0f0f12]">
+                    <span className="text-[11px] text-[#71717a]">Search results</span>
+                    <select value={config.search_top_k} onChange={e => updateConfig('search_top_k', Number(e.target.value))}
+                      className="bg-[#0c0c0f] border border-[#1a1a1f] text-[10px] font-mono text-[#71717a] rounded px-1.5 py-0.5 outline-none">
+                      <option value={5}>5</option><option value={10}>10</option><option value={20}>20</option>
+                    </select>
+                  </div>
+                  {/* Bbox confidence */}
+                  <div className="flex items-center justify-between py-2.5 border-b border-[#0f0f12]">
+                    <span className="text-[11px] text-[#71717a]">Min bbox confidence</span>
+                    <select value={config.bbox_min_confidence} onChange={e => updateConfig('bbox_min_confidence', Number(e.target.value))}
+                      className="bg-[#0c0c0f] border border-[#1a1a1f] text-[10px] font-mono text-[#71717a] rounded px-1.5 py-0.5 outline-none">
+                      <option value={0.25}>25%</option><option value={0.35}>35%</option><option value={0.5}>50%</option><option value={0.7}>70%</option>
+                    </select>
+                  </div>
+                  {/* Models (read-only info) */}
+                  <div className="flex items-center justify-between py-2.5 border-b border-[#0f0f12]">
+                    <span className="text-[11px] text-[#71717a]">Vision model</span>
+                    <span className="font-mono text-[10px] text-[#52525b]">{config.vision_model}</span>
+                  </div>
+                  <div className="flex items-center justify-between py-2.5">
+                    <span className="text-[11px] text-[#71717a]">LLM model</span>
+                    <span className="font-mono text-[10px] text-[#52525b]">{config.llm_model}</span>
+                  </div>
                 </div>
               </div>
             )}

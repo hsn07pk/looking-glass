@@ -25,7 +25,7 @@ class OpenVocabDetector:
     """Wraps YOLO-World for open-vocabulary detection."""
 
     model_name: str = "yolov8m-worldv2.pt"
-    conf_threshold: float = 0.25
+    conf_threshold: float = 0.40
     iou_threshold: float = 0.5
     _model: YOLOWorld | None = field(default=None, repr=False)
     _classes_set: list[str] = field(default_factory=list, repr=False)

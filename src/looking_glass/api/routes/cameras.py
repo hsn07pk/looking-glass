@@ -37,9 +37,12 @@ async def get_camera_tracks(camera_id: str) -> list[dict]:
         return []
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
+    # Filter out low-confidence detections and noisy classes
     rows = conn.execute(
         "SELECT track_id, timestamp, x1, y1, x2, y2, class_name, score "
-        "FROM detections WHERE camera_id=? ORDER BY timestamp",
+        "FROM detections WHERE camera_id=? AND score >= 0.35 "
+        "AND class_name NOT IN ('window', 'door', 'entrance', 'helmet', 'umbrella') "
+        "ORDER BY timestamp",
         (camera_id,),
     ).fetchall()
     conn.close()

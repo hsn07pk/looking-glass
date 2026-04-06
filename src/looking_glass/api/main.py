@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from looking_glass.api.routes import alerts, analytics, cameras, search
+from looking_glass.api.routes import alerts, analytics, cameras, search, settings
 from looking_glass.api.schemas import HealthResponse
 from looking_glass.config import DATA_DIR
 
@@ -33,6 +33,7 @@ def create_app() -> FastAPI:
     app.include_router(alerts.router, tags=["alerts"])
     app.include_router(analytics.router, tags=["analytics"])
     app.include_router(cameras.router, tags=["cameras"])
+    app.include_router(settings.router, tags=["settings"])
 
     # Serve video files and frame images
     videos_dir = DATA_DIR / "videos" / "normalized"
