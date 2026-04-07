@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Looking Glass — Pitch</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#000;--fg:#fff;--dim:#888;--accent-from:#ff6b9d;--accent-to:#b967ff;--accent-yellow:#d4ff3f}
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{background:var(--bg);color:var(--fg);font-family:'Inter',sans-serif;font-weight:300;height:100vh;width:100vw;overflow:hidden}
+  .deck{position:relative;height:100vh;width:100vw}
+  .slide{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:6vh 8vw;opacity:0;pointer-events:none;transition:opacity .45s ease;text-align:center}
+  .slide.active{opacity:1;pointer-events:auto}
+  .section-label{position:absolute;top:5vh;left:5vw;font-size:clamp(14px,1.4vw,22px);font-weight:400;letter-spacing:.02em}
+  .accent{background:linear-gradient(90deg,var(--accent-from),var(--accent-to));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;font-weight:400}
+  .accent-yellow{color:var(--accent-yellow);font-weight:400}
+  h1{font-size:clamp(48px,7vw,110px);font-weight:300;line-height:1;letter-spacing:-.02em;margin-bottom:2vh}
+  h2{font-size:clamp(36px,5vw,72px);font-weight:300;line-height:1.05;letter-spacing:-.02em;margin-bottom:3vh}
+  h3{font-size:clamp(22px,2.4vw,38px);font-weight:400;margin-bottom:2vh}
+  p{font-size:clamp(16px,1.4vw,22px);font-weight:300;color:var(--dim);max-width:900px;line-height:1.5}
+  .stat{font-size:clamp(60px,9vw,140px);font-weight:300;letter-spacing:-.03em;line-height:1}
+  .mono{font-family:'JetBrains Mono',monospace}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:4vw;max-width:1100px;width:100%;text-align:left}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:3vw;max-width:1100px;width:100%;text-align:left}
+  .card{border:1px solid #222;padding:3vh 2vw;border-radius:4px}
+  .card h4{font-size:clamp(18px,1.6vw,24px);font-weight:500;margin-bottom:1vh;color:var(--accent-yellow)}
+  .card p{font-size:clamp(14px,1.1vw,17px)}
+  .nav{position:fixed;bottom:3vh;right:3vw;font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--dim);z-index:10}
+  .hint{position:fixed;bottom:3vh;left:3vw;font-family:'JetBrains Mono',monospace;font-size:12px;color:#444;z-index:10}
+  .query{font-family:'JetBrains Mono',monospace;font-size:clamp(20px,2.2vw,32px);color:var(--accent-yellow);background:#0a0a0a;border:1px solid #222;padding:2vh 3vw;border-radius:4px;margin:1.5vh 0;display:inline-block}
+  .source{position:absolute;bottom:4vh;font-size:11px;color:#444;font-family:'JetBrains Mono',monospace;max-width:80vw;text-align:center}
+  .typewriter{overflow:hidden;white-space:nowrap;border-right:2px solid var(--accent-yellow);animation:typing 2s steps(30,end) forwards,blink .75s step-end infinite;width:0;display:inline-block;vertical-align:bottom}
+  @keyframes typing{from{width:0}to{width:100%}}
+  @keyframes blink{50%{border-color:transparent}}
+  .fade-up{opacity:0;transform:translateY(30px);transition:all .6s ease .3s}
+  .active .fade-up{opacity:1;transform:translateY(0)}
+  .fade-up-2{opacity:0;transform:translateY(30px);transition:all .6s ease .6s}
+  .active .fade-up-2{opacity:1;transform:translateY(0)}
+  .fade-up-3{opacity:0;transform:translateY(30px);transition:all .6s ease .9s}
+  .active .fade-up-3{opacity:1;transform:translateY(0)}
+  .pulse{animation:pulse-glow 2s ease-in-out infinite}
+  @keyframes pulse-glow{0%,100%{opacity:1}50%{opacity:.7}}
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- 1 — TITLE (5s)                             -->
+<!-- Speaker: "Good afternoon."                 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="slide active">
+<h1>Looking <span class="accent">Glass</span></h1>
+<p class="fade-up" style="font-size:clamp(20px,2vw,30px);color:var(--fg);margin-top:2vh">We don't just monitor. <span class="accent-yellow">We detect</span>.</p>
+<p class="fade-up-2 mono" style="margin-top:6vh;font-size:14px;color:#555">Springineering Challenge 2026 · University of Oulu</p>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- 2 — HOOK: The scale (20s)                  -->
+<!-- Speaker: "There are one billion cameras     -->
+<!-- in the world right now."                   -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="slide">
+<div class="stat accent">1 billion</div>
+<h3 class="fade-up" style="margin-top:2vh">surveillance cameras. Worldwide. Right now.</h3>
+<p class="fade-up-2" style="margin-top:4vh">Recording everything. Every parking lot, every store, every hallway, every street corner.</p>
+<div class="source">Source: IHS Markit / S&P Global</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- 3 — THE PARADOX (20s)                      -->
+<!-- Speaker: "And nobody is watching."          -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="slide">
+<h2>Nobody is <span class="accent">watching</span>.</h2>
+<div class="fade-up" style="margin-top:3vh">
+<div class="stat accent-yellow" style="font-size:clamp(50px,7vw,100px)">98%</div>
+<p style="margin-top:2vh;color:var(--fg)">of all footage is never seen by human eyes.</p>
+</div>
+<p class="fade-up-2" style="margin-top:3vh">A campus like Linnanmaa has hundreds of cameras generating <span class="accent-yellow">gigabytes every day</span>. A single operator's attention drops by half every 20 minutes, after that, they miss 95% of what's on screen. Reviewing just one camera's daily footage takes 2–4 hours. Nobody is sitting through that. The footage just piles up.</p>
+<div class="source">Sources: Sandia National Labs / U.S. DOE; Gill et al. 2005; CPNI monitoring guidelines; Steerpath / SYK Linnanmaa (150,000 m²)</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- 4 — MAKE IT LOCAL: Oulu (30s)              -->
+<!-- Speaker: "And this isn't an abstract        -->
+<!-- problem. It's happening right here."        -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="slide">
+<h3>This isn't abstract. <span class="accent">It's happening here.</span></h3>
+<div class="grid3 fade-up" style="margin-top:4vh">
+<div class="card">
+<h4>1,738</h4>
+<p>bicycles stolen in Oulu last year.</p>
+<p style="color:var(--accent-from);margin-top:1vh;font-weight:500">Only 7% recovered.</p>
+</div>
+<div class="card">
+<h4>+22%</h4>
+<p>surge in shop theft across Finland. Q1 2025. 16,300 incidents in one quarter.</p>
+</div>
+<div class="card">
+<h4>Oulu 2026</h4>
+<p>European Capital of Culture. Thousands of events. Every venue has cameras.</p>
+</div>
+</div>
+<p class="fade-up-2" style="margin-top:3vh">The footage existed in every single case. Cameras were rolling. Nobody had time to watch.</p>
+<div class="source">Sources: Oulun ylioppilaslehti 2023; Statistics Finland Q1 2025; Oulu2026.eu</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- 5 — THE REFRAME (15s)                      -->
+<!-- Speaker: "The fix is not more cameras."     -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="slide">
+<h2>The fix isn't <span class="accent">more cameras</span>.</h2>
+<h2 class="fade-up">It's letting them <span class="accent-yellow">understand</span>.</h2>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- 6 — THE REVEAL (30s)                       -->
+<!-- Speaker: "What if... instead of scrubbing   -->
+<!-- through hours of footage... you could just  -->
+<!-- type what you're looking for?"              -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="slide">
+<h2 style="margin-bottom:4vh">What if you could just <span class="accent">type</span>?</h2>
+<div class="fade-up">
+<div class="query">"find the person who took the red bicycle"</div>
+</div>
+<div class="fade-up-2">
+<div class="query">"bag left unattended on the floor"</div>
+</div>
+<div class="fade-up-3">
+<div class="query">"how many people walked through today?"</div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- 7 — THIS IS LOOKING GLASS + MARKET (25s)   -->
+<!-- Speaker: "This is Looking Glass. And this   -->
+<!-- is a $74 billion market."                   -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="slide">
+<h1>This is Looking <span class="accent">Glass</span>.</h1>
+<div class="fade-up" style="margin-top:3vh">
+<p style="color:var(--fg);font-size:clamp(18px,1.8vw,28px)">Any number of cameras. Any question. <span class="accent-yellow">Instant answers.</span></p>
+</div>
+<div class="fade-up-2" style="display:flex;gap:5vw;margin-top:4vh;align-items:flex-end">
+<div><div class="stat accent" style="font-size:clamp(40px,5.5vw,80px)">$74B</div><p style="margin-top:0.5vh;font-size:clamp(13px,1.1vw,17px)">TAM · video surveillance</p></div>
+<div><div class="stat accent-yellow" style="font-size:clamp(40px,5.5vw,80px)">$13B</div><p style="margin-top:0.5vh;font-size:clamp(13px,1.1vw,17px)">SAM · video analytics</p></div>
+<div><div class="stat" style="font-size:clamp(40px,5.5vw,80px);color:var(--fg)">22%</div><p style="margin-top:0.5vh;font-size:clamp(13px,1.1vw,17px)">CAGR · AI video analytics</p></div>
+</div>
+<p class="fade-up-3" style="margin-top:2vh;font-size:clamp(13px,1.05vw,16px)">European market: $21.5B in 2024, projected $61.7B by 2033. Edge deployments are the fastest-growing sub-segment at 26% CAGR. EU AI Act and GDPR favor on-device architectures. ISR defense segment: $5–10B annually.</p>
+<div class="source">Sources: Grand View Research; Mordor Intelligence; MarketsandMarkets 2025; Market Data Forecast 2024</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- 8 — WHAT IT DOES (30s)                     -->
+<!-- Speaker: brief walkthrough of capabilities  -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="slide">
+<h3>Four things no other system does <span class="accent">together</span>.</h3>
+<div class="grid3 fade-up" style="margin-top:4vh;grid-template-columns:1fr 1fr;max-width:1000px;gap:3vh 4vw">
+<div class="card" style="border-color:#333">
+<h4 style="font-size:clamp(16px,1.4vw,22px)">Search</h4>
+<p>Type anything. Find it. No tags, no filters, no training.</p>
+</div>
+<div class="card" style="border-color:#333">
+<h4 style="font-size:clamp(16px,1.4vw,22px)">Understand</h4>
+<p>"Unattended bag" works. The system grasps meaning, not keywords.</p>
+</div>
+<div class="card" style="border-color:#333">
+<h4 style="font-size:clamp(16px,1.4vw,22px)">Alert</h4>
+<p>Register a watch. Get notified the moment it happens. Across all cameras.</p>
+</div>
+<div class="card" style="border-color:#333">
+<h4 style="font-size:clamp(16px,1.4vw,22px)">Ask</h4>
+<p>"How many people today?" Real answers from a local AI that watched everything.</p>
+</div>
+</div>
+<p class="fade-up-2" style="margin-top:3vh;font-size:clamp(14px,1.1vw,17px)">Natural language in. Visual intelligence out. From retail to defense to smart cities.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- 9 — USE CASES: All sectors (30s)           -->
+<!-- Speaker: "Where does this apply? Everywhere -->
+<!-- cameras already exist — and beyond."        -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="slide">
+<h3>Where cameras exist, <span class="accent">problems go unseen</span>.</h3>
+<div class="grid2 fade-up" style="margin-top:3vh;gap:2vh 3vw">
+<div class="card" style="padding:2vh 1.5vw"><h4 style="font-size:clamp(15px,1.3vw,20px)">Retail</h4><p>$112B annual shrinkage. Cameras watch every dollar walk out.</p></div>
+<div class="card" style="padding:2vh 1.5vw"><h4 style="font-size:clamp(15px,1.3vw,20px)">Workplace safety</h4><p>5,283 fatal injuries in 2023. PPE violations go unseen.</p></div>
+<div class="card" style="padding:2vh 1.5vw"><h4 style="font-size:clamp(15px,1.3vw,20px)">Smart city & traffic</h4><p>Pedestrian deaths up 80% since 2009. Detection happens after impact.</p></div>
+<div class="card" style="padding:2vh 1.5vw"><h4 style="font-size:clamp(15px,1.3vw,20px)">Hospitals & elder care</h4><p>700K patient falls a year. $64K average cost per fall.</p></div>
+<div class="card" style="padding:2vh 1.5vw"><h4 style="font-size:clamp(15px,1.3vw,20px)">Force protection</h4><p>19 analysts per drone feed. 90% of footage is useless — you don't know which 10% matters.</p></div>
+<div class="card" style="padding:2vh 1.5vw"><h4 style="font-size:clamp(15px,1.3vw,20px)">Border & NATO</h4><p>Finland's 1,340 km Russian border. 200 km camera barrier under construction. 36 defense startups in DEFINE.</p></div>
+<div class="card" style="padding:2vh 1.5vw"><h4 style="font-size:clamp(15px,1.3vw,20px)">Logistics & ports</h4><p>$35B in cargo theft in 2024. 70% of forklift accidents are preventable.</p></div>
+<div class="card" style="padding:2vh 1.5vw"><h4 style="font-size:clamp(15px,1.3vw,20px)">Peacekeeping & SAR</h4><p>UN missions map conflict zones from drone footage. SAR teams need answers in hours, not days.</p></div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- 10 — CLOSE (15s)                            -->
+<!-- Speaker: "Cameras see 100%..."              -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="slide">
+<h1>Cameras see <span class="accent">100%</span>.</h1>
+<h1 class="fade-up">Humans review <span class="accent-yellow">2%</span>.</h1>
+<h1 class="fade-up-2" style="margin-top:2vh">We close the <span class="accent">98% gap</span>.</h1>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- 11 — TRANSITION TO DEMO (10s)              -->
+<!-- Speaker: "Let me show you."                 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="slide">
+<h2 class="pulse">Let me <span class="accent">show</span> you.</h2>
+<a id="demo-link" href="http://localhost:5173" target="_blank" rel="noopener" class="fade-up" style="display:inline-block;margin-top:6vh;font-family:'JetBrains Mono',monospace;font-size:clamp(16px,1.4vw,22px);color:var(--accent-yellow);background:#0a0a0a;border:1px solid #333;padding:2vh 4vw;border-radius:4px;text-decoration:none;cursor:pointer;transition:border-color .3s,background .3s" onmouseover="this.style.borderColor='var(--accent-yellow)';this.style.background='#111'" onmouseout="this.style.borderColor='#333';this.style.background='#0a0a0a'">▶  Launch Demo</a>
+<p class="fade-up-2 mono" style="margin-top:2vh;font-size:12px;color:#444">press D to open demo · or click above</p>
+</div>
+
+</div>
+
+<div class="hint">← → arrows · click to advance</div>
+<div class="nav mono"><span id="cur">01</span> / <span id="tot">10</span></div>
+
+<script>
+const slides=document.querySelectorAll('.slide');
+let i=0;
+document.getElementById('tot').textContent=String(slides.length).padStart(2,'0');
+function go(n){
+  slides[i].classList.remove('active');
+  i=(n+slides.length)%slides.length;
+  slides[i].classList.add('active');
+  document.getElementById('cur').textContent=String(i+1).padStart(2,'0');
+}
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key===' ')go(i+1);
+  if(e.key==='ArrowLeft')go(i-1);
+  if(e.key==='d'||e.key==='D'){const l=document.getElementById('demo-link');if(l)window.open(l.href,'_blank');}
+});
+document.addEventListener('click',e=>{
+  if(e.clientX>window.innerWidth/2)go(i+1);else go(i-1);
+});
+</script>
+</body>
+</html>
