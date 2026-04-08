@@ -1,5 +1,3 @@
-"""Central configuration for Looking Glass."""
-
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent

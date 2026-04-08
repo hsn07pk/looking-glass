@@ -1,8 +1,3 @@
-"""Generate synthetic demo clips for Looking Glass using OpenCV.
-
-Each clip simulates a camera feed with colored objects to test detection.
-"""
-
 from __future__ import annotations
 
 import sys
@@ -25,7 +20,6 @@ def generate_clip(
     bg_color: tuple[int, int, int] = (40, 40, 40),
     objects: list[dict] | None = None,
 ) -> None:
-    """Generate a synthetic video clip with moving colored objects."""
     if path.exists():
         print(f"  {path.name}: already exists")
         return
@@ -37,7 +31,6 @@ def generate_clip(
 
     for i in range(total_frames):
         frame = np.full((h, w, 3), bg_color, dtype=np.uint8)
-        # Add some noise for texture
         noise = np.random.randint(0, 15, (h, w, 3), dtype=np.uint8)
         frame = cv2.add(frame, noise)
 
@@ -47,14 +40,11 @@ def generate_clip(
                 y = obj["y"] + int(obj.get("dy", 0) * i / total_frames)
                 ow, oh = obj["w"], obj["h"]
                 color = obj["color"]
-                # Draw filled rectangle
                 cv2.rectangle(frame, (x, y), (x + ow, y + oh), color, -1)
-                # Optional label
                 if "label" in obj:
                     cv2.putText(frame, obj["label"], (x + 5, y - 5),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
-        # Add timestamp overlay
         ts = f"{i / fps:.1f}s"
         cv2.putText(frame, ts, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 136), 2)
 
@@ -67,7 +57,6 @@ def generate_clip(
 def main() -> None:
     NORM_DIR.mkdir(parents=True, exist_ok=True)
 
-    # If real clips already exist, skip synthetic generation
     existing = list(NORM_DIR.glob("*.mp4"))
     real_clips = [f for f in existing if f.stat().st_size > 1_000_000]  # >1MB = real
     if len(real_clips) >= 8:
@@ -113,7 +102,6 @@ def main() -> None:
     for name, bg, objects in clips:
         generate_clip(NORM_DIR / name, bg_color=bg, objects=objects)
 
-    # Write manifest
     clip_files = sorted(NORM_DIR.glob("*.mp4"))
     manifest = {
         "clips": [

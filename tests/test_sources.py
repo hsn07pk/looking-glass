@@ -1,5 +1,3 @@
-"""Tests for video sources and frame sampler."""
-
 import numpy as np
 import pytest
 
@@ -11,7 +9,6 @@ from looking_glass.ingestion.frame_sampler import FrameSampler
 
 
 def _make_frames(n: int, camera_id: str = "cam01", fps: float = 25.0) -> list[Frame]:
-    """Create synthetic frames for testing."""
     return [
         Frame(
             camera_id=camera_id,

@@ -1,5 +1,3 @@
-"""Abstract base for video sources."""
-
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -11,7 +9,6 @@ import numpy.typing as npt
 
 @dataclass
 class Frame:
-    """A single video frame with metadata."""
 
     camera_id: str
     timestamp: float
@@ -20,14 +17,8 @@ class Frame:
 
 
 class VideoSource(ABC):
-    """Abstract base class for video sources."""
+    @abstractmethod
+    def frames(self) -> list[Frame]: ...
 
     @abstractmethod
-    def frames(self) -> list[Frame]:
-        """Return all frames from this source."""
-        ...
-
-    @abstractmethod
-    def camera_id(self) -> str:
-        """Return the camera identifier."""
-        ...
+    def camera_id(self) -> str: ...

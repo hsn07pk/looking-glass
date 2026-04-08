@@ -1,11 +1,3 @@
-"""Ingest all normalized video clips into the vector store.
-
-Features:
-- Per-camera checkpointing: resumes from where it left off if interrupted
-- Progress logging with frame counts and ETA
-- Parallel-safe: uses a JSON checkpoint file per camera
-"""
-
 from __future__ import annotations
 
 import json
@@ -22,7 +14,6 @@ CHECKPOINT_DIR = DATA_DIR / "checkpoints"
 
 
 def load_checkpoint(camera_id: str) -> dict | None:
-    """Load checkpoint for a camera. Returns None if no checkpoint exists."""
     cp_file = CHECKPOINT_DIR / f"{camera_id}.json"
     if cp_file.exists():
         return json.loads(cp_file.read_text())
@@ -30,7 +21,6 @@ def load_checkpoint(camera_id: str) -> dict | None:
 
 
 def save_checkpoint(camera_id: str, data: dict) -> None:
-    """Save checkpoint for a camera."""
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     cp_file = CHECKPOINT_DIR / f"{camera_id}.json"
     cp_file.write_text(json.dumps(data, indent=2))
@@ -58,7 +48,6 @@ def main() -> None:
         print(f"No clips found in {NORMALIZED_DIR}")
         return
 
-    # Check which cameras are already fully ingested
     completed = []
     pending = []
     for clip in clips:
@@ -89,7 +78,6 @@ def main() -> None:
 
         print(f"\n[{i+1}/{len(pending)}] Ingesting {clip.name}...")
 
-        # Save in-progress checkpoint
         save_checkpoint(cam_id, {
             "status": "in_progress",
             "clip": clip.name,
@@ -111,7 +99,6 @@ def main() -> None:
                   f"{stats['detections']} detections, {stats['tracks']} tracks "
                   f"({clip_elapsed:.0f}s, {fps:.2f} fps)")
 
-            # Save completed checkpoint
             save_checkpoint(cam_id, {
                 "status": "done",
                 "clip": clip.name,
@@ -123,7 +110,6 @@ def main() -> None:
                 "completed_at": time.time(),
             })
 
-            # ETA for remaining clips
             elapsed_so_far = time.time() - total_start
             remaining = len(pending) - (i + 1)
             if i > 0:
@@ -139,7 +125,6 @@ def main() -> None:
                 "error": str(e),
                 "failed_at": time.time(),
             })
-            # Continue with next camera instead of crashing
             continue
 
     elapsed = time.time() - total_start

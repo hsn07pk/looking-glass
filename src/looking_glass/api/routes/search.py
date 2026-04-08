@@ -1,5 +1,3 @@
-"""Search route."""
-
 from __future__ import annotations
 
 from fastapi import APIRouter
@@ -18,14 +16,12 @@ router = APIRouter()
 
 @router.post("/search", response_model=SearchResponse)
 async def search(req: SearchRequest) -> SearchResponse:
-    """Natural language search over video frames."""
     try:
         nl_search = get_search()
         results = nl_search.search(req.q, top_k=req.top_k)
     except Exception as exc:
         logger.error(f"Search failed for query '{req.q}': {exc}")
         return SearchResponse(results=[], query=req.q, total=0)
-    # Filter noisy detections for clean display
     _NOISY_CLASSES = {"phone", "smartphone", "camera"}
     _NOISY_LABELS = {
         "one hand", "his hands", "her hands", "their hands", "hand", "hands",
@@ -46,7 +42,6 @@ async def search(req: SearchRequest) -> SearchResponse:
             if d.get("class_name", d.get("class", "")) not in _NOISY_CLASSES
             and d.get("class_name", d.get("class", "")) not in _NOISY_LABELS
         ]
-        # Limit to top 5 detections per frame for clean display
         dets = dets[:5]
         items.append(SearchResultItem(
             camera_id=r.camera_id,

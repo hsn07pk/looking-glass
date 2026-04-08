@@ -1,5 +1,3 @@
-"""Florence-2 dense captioner + Ollama VLM exhaustive captioner."""
-
 from __future__ import annotations
 
 import tempfile
@@ -32,7 +30,6 @@ def _device() -> str:
 
 @dataclass
 class DenseCaptioner:
-    """Wraps Florence-2 for captioning and grounded detection."""
 
     model_id: str = "microsoft/Florence-2-base"
     _model: AutoModelForCausalLM | None = field(default=None, repr=False)
@@ -52,7 +49,6 @@ class DenseCaptioner:
         self._model.eval()  # type: ignore[union-attr]
 
     def _run_task(self, image: Image.Image, task: str, text_input: str = "") -> dict:
-        """Run a Florence-2 task and return parsed output."""
         assert self._model is not None
         assert self._processor is not None
 
@@ -80,29 +76,22 @@ class DenseCaptioner:
         return parsed  # type: ignore[return-value]
 
     def _to_pil(self, image: npt.NDArray[np.uint8]) -> Image.Image:
-        """Convert BGR numpy array to RGB PIL Image."""
         if image.ndim == 3 and image.shape[2] == 3:
             return Image.fromarray(image[:, :, ::-1])
         return Image.fromarray(image)
 
     def caption(self, image: npt.NDArray[np.uint8]) -> str:
-        """Generate a short caption for the image."""
         pil_img = self._to_pil(image)
         result = self._run_task(pil_img, "<DETAILED_CAPTION>")
         return result.get("<DETAILED_CAPTION>", "")
 
     def dense_caption(self, image: npt.NDArray[np.uint8]) -> str:
-        """Generate a more detailed caption."""
         pil_img = self._to_pil(image)
         result = self._run_task(pil_img, "<MORE_DETAILED_CAPTION>")
         return result.get("<MORE_DETAILED_CAPTION>", "")
 
     def exhaustive_caption(self, image: npt.NDArray[np.uint8]) -> str:
-        """Generate an exhaustive, paragraph-length caption using Ollama VLM.
-
-        Uses minicpm-v (or llava fallback) to produce detailed descriptions
-        covering people, clothing colors, objects, actions, spatial layout.
-        """
+        """Exhaustive caption via minicpm-v, falls back to Florence-2."""
         import cv2
         import ollama
 
@@ -135,10 +124,6 @@ class DenseCaptioner:
     def grounded_detection(
         self, image: npt.NDArray[np.uint8], text: str,
     ) -> list[dict]:
-        """Run grounded detection: find bboxes for objects described in text.
-
-        Returns list of dicts with 'bbox' (x1,y1,x2,y2) and 'label'.
-        """
         pil_img = self._to_pil(image)
         result = self._run_task(pil_img, "<CAPTION_TO_PHRASE_GROUNDING>", text)
         grounding = result.get("<CAPTION_TO_PHRASE_GROUNDING>", {})

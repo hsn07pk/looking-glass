@@ -1,5 +1,3 @@
-"""Ingestion pipeline — orchestrates the full video processing chain."""
-
 from __future__ import annotations
 
 import json
@@ -50,7 +48,6 @@ DB_PATH = DATA_DIR / "tracks.db"
 
 
 def init_db(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    """Initialize SQLite database for tracks."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
     conn.execute("""
@@ -82,7 +79,6 @@ def init_db(db_path: Path = DB_PATH) -> sqlite3.Connection:
 
 @dataclass
 class IngestionPipeline:
-    """Orchestrates the full ingestion pipeline."""
 
     detector: Detector
     tracker: Tracker
@@ -98,7 +94,6 @@ class IngestionPipeline:
             self.classes = list(OPEN_VOCAB_SET)
 
     def ingest_frames(self, camera_id: str, frames: list[Frame]) -> dict:
-        """Run the full pipeline on a list of frames. Returns stats."""
         from looking_glass.ingestion.frame_sampler import FrameSampler
 
         sampler = FrameSampler(self.target_fps)
@@ -118,23 +113,19 @@ class IngestionPipeline:
         frames_dir.mkdir(parents=True, exist_ok=True)
 
         for frame in sampled:
-            # Save frame image
             frame_id = f"{camera_id}_f{frame.frame_idx:06d}"
             frame_path = frames_dir / f"{frame_id}.jpg"
             if not frame_path.exists():
                 import cv2
                 cv2.imwrite(str(frame_path), frame.image)
 
-            # Detect
             dets = self.detector.detect(frame.image, self.classes)
             stats["detections"] += len(dets)
 
-            # Track
             tracked = self.tracker.update(dets, frame.image)
             for t in tracked:
                 tid = t.get("track_id", 0)
                 stats["tracks"].add(tid)
-                # SQLite
                 sql_tracks = (
                     "INSERT OR REPLACE INTO tracks"
                     " (track_id, camera_id, class_name,"
@@ -171,15 +162,10 @@ class IngestionPipeline:
                     ),
                 )
 
-            # Short caption for grounded detection (Florence-2)
             short_cap = self.captioner.caption(frame.image)
-
-            # Exhaustive caption via Ollama VLM for rich queryable descriptions
             cap = self.captioner.exhaustive_caption(frame.image)
             stats["captions"] += 1
 
-            # Florence-2 grounded detection: find bboxes for everything in the caption.
-            # This automatically detects all objects/people/actions without a fixed class list.
             grounded_dets: list[dict] = []
             if short_cap:
                 try:
@@ -194,10 +180,8 @@ class IngestionPipeline:
                         if g.get("bbox")
                     ]
                 except Exception:
-                    pass  # graceful fallback if grounding fails
+                    pass
 
-            # Merge: YOLO-World tracked detections + Florence-2 grounded detections
-            # YOLO provides tracked objects with IDs; Florence provides caption-grounded bboxes
             all_detections = [
                 {
                     "bbox": t.get("bbox"),
@@ -208,7 +192,6 @@ class IngestionPipeline:
                 for t in tracked
             ] + grounded_dets
 
-            # Embed frame
             frame_vec = self.embedder.encode_image(frame.image)
             self.store.upsert_frame(frame_id, frame_vec, {
                 "camera_id": camera_id,
@@ -219,7 +202,6 @@ class IngestionPipeline:
                 "detections": json.dumps(all_detections),
             })
 
-            # Embed crops from tracked objects (YOLO-World)
             for t in tracked:
                 bbox = t.get("bbox", (0, 0, 0, 0))
                 x1, y1, x2, y2 = [int(c) for c in bbox]

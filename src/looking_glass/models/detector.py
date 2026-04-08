@@ -1,5 +1,3 @@
-"""YOLO-World open-vocabulary object detector."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -22,7 +20,6 @@ def _device() -> str:
 
 @dataclass
 class OpenVocabDetector:
-    """Wraps YOLO-World for open-vocabulary detection."""
 
     model_name: str = "yolov8m-worldv2.pt"
     conf_threshold: float = 0.40
@@ -37,11 +34,6 @@ class OpenVocabDetector:
     def detect(
         self, image: npt.NDArray[np.uint8], classes: list[str] | None = None,
     ) -> list[dict]:
-        """Detect objects in a frame.
-
-        Returns list of dicts with keys: bbox, class_name, score.
-        bbox is (x1, y1, x2, y2) in pixel coordinates.
-        """
         assert self._model is not None
 
         target_classes = classes if classes else OPEN_VOCAB_SET

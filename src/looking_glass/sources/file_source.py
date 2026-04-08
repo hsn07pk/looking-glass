@@ -1,5 +1,3 @@
-"""File-based video source using decord."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,7 +8,6 @@ from looking_glass.sources.base import Frame, VideoSource
 
 
 class FileVideoSource(VideoSource):
-    """Reads an MP4 file and yields frames."""
 
     def __init__(
         self, path: str | Path, fps: float = 25.0, sample_fps: float = 0.0,
@@ -24,11 +21,6 @@ class FileVideoSource(VideoSource):
         return self._camera_id
 
     def frames(self) -> list[Frame]:
-        """Read frames from the video file.
-
-        If sample_fps > 0, only reads ~sample_fps frames per second
-        to avoid loading hundreds of 4K frames into RAM.
-        """
         result: list[Frame] = []
         cap = cv2.VideoCapture(str(self.path))
         if not cap.isOpened():

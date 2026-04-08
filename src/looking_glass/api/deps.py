@@ -1,5 +1,3 @@
-"""Dependency injection for FastAPI — singleton model instances."""
-
 from __future__ import annotations
 
 from functools import lru_cache

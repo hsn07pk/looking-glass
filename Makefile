@@ -1,13 +1,10 @@
-.PHONY: setup detect download-models ingest serve frontend demo demo-smoke test eval preflight verify clean fallback
+.PHONY: setup download-models ingest serve frontend demo demo-smoke test eval preflight clean
 
 setup:
 	uv sync --extra dev
 	cd frontend && pnpm install
-	mkdir -p LOGS .checkpoints BENCHMARKS data/frames models
+	mkdir -p data/frames models
 	@echo "Dependencies installed."
-
-detect:
-	uv run python scripts/detect_system.py
 
 download-models:
 	uv run python scripts/download_models.py
@@ -43,13 +40,6 @@ eval:
 preflight:
 	uv run python scripts/health_check.py
 	uv run python scripts/eval_demo_queries.py
-	uv run python scripts/verify_state.py
-
-verify:
-	uv run python scripts/verify_state.py
-
-fallback:
-	uv run python scripts/screenshot_fallback.py
 
 clean:
 	rm -rf data/qdrant_storage data/tracks.db data/frames .venv __pycache__ frontend/node_modules frontend/dist

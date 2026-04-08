@@ -1,5 +1,3 @@
-"""Smoke tests for the FastAPI backend."""
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -33,7 +31,6 @@ async def test_cameras(client):
 
 @pytest.mark.asyncio
 async def test_search(client):
-    """Search endpoint must return 200, even if results are empty."""
     async with client as c:
         r = await c.post("/search", json={"q": "truck", "top_k": 3})
         assert r.status_code == 200
@@ -44,7 +41,6 @@ async def test_search(client):
 
 @pytest.mark.asyncio
 async def test_analytics(client):
-    """Analytics endpoint must return 200."""
     async with client as c:
         r = await c.post("/analytics/ask", json={"q": "how many objects?"})
         assert r.status_code == 200

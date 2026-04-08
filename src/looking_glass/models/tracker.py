@@ -1,5 +1,3 @@
-"""ByteTrack multi-object tracker via supervision."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -11,7 +9,6 @@ import supervision as sv
 
 @dataclass
 class MultiObjectTracker:
-    """Wraps supervision.ByteTrack for frame-to-frame tracking."""
 
     track_activation_threshold: float = 0.25
     lost_track_buffer: int = 30
@@ -30,11 +27,6 @@ class MultiObjectTracker:
     def update(
         self, detections: list[dict], frame: npt.NDArray[np.uint8],
     ) -> list[dict]:
-        """Update tracker with new detections.
-
-        Input dicts must have: bbox (x1,y1,x2,y2), class_name, score.
-        Returns same dicts with added track_id.
-        """
         if not detections:
             return []
 
@@ -74,7 +66,6 @@ class MultiObjectTracker:
         return results
 
     def reset(self) -> None:
-        """Reset tracker state between videos."""
         self._tracker = sv.ByteTrack(
             track_activation_threshold=self.track_activation_threshold,
             lost_track_buffer=self.lost_track_buffer,

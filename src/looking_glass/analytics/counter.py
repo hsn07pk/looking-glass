@@ -1,5 +1,3 @@
-"""People counter and analytics engine using track data + Ollama."""
-
 from __future__ import annotations
 
 import re
@@ -11,7 +9,6 @@ from looking_glass.config import DATA_DIR
 
 @dataclass
 class PeopleCounter:
-    """Count unique people (tracks) from SQLite."""
 
     db_path: str = ""
 
@@ -20,7 +17,6 @@ class PeopleCounter:
             self.db_path = str(DATA_DIR / "tracks.db")
 
     def count(self, camera: str | None = None, class_name: str = "person") -> int:
-        """Count distinct track IDs, optionally filtered by camera."""
         conn = sqlite3.connect(self.db_path)
         if camera:
             row = conn.execute(
@@ -36,7 +32,6 @@ class PeopleCounter:
         return row[0] if row else 0
 
     def count_all(self, camera: str | None = None) -> int:
-        """Count all distinct tracks regardless of class."""
         conn = sqlite3.connect(self.db_path)
         if camera:
             row = conn.execute(
@@ -51,7 +46,6 @@ class PeopleCounter:
         return row[0] if row else 0
 
     def time_window(self, camera: str | None = None) -> tuple[float, float]:
-        """Get the time window of tracked activity."""
         conn = sqlite3.connect(self.db_path)
         if camera:
             row = conn.execute(
@@ -67,11 +61,9 @@ class PeopleCounter:
             return (row[0], row[1])
         return (0.0, 0.0)
 
-    # Classes known to produce false positives from YOLO-World
     _NOISY_CLASSES = {"phone", "smartphone", "camera"}
 
     def summary(self, camera: str | None = None) -> str:
-        """Get a detailed summary of tracked objects for a camera or all cameras."""
         conn = sqlite3.connect(self.db_path)
         if camera:
             rows = conn.execute(
@@ -119,7 +111,6 @@ class PeopleCounter:
 
 @dataclass
 class AnalyticsRouter:
-    """Routes analytics questions to the right handler."""
 
     counter: PeopleCounter
     _chat: object = None
@@ -132,21 +123,13 @@ class AnalyticsRouter:
         return self._chat
 
     def _build_search_query(self, question: str) -> str:
-        """Build a descriptive search query from the question + conversation history.
-
-        SigLIP works best with descriptive phrases, not questions.
-        Use Ollama to convert the question (with history context) into a visual search query.
-        """
         if not self._history:
-            # No history — extract key nouns/descriptors from the question
-            # Remove question words to make it more descriptive
             q = question.lower()
             for word in ["what", "which", "where", "how", "many", "is", "are", "the",
                          "do", "does", "did", "can", "could", "?", "please", "tell me"]:
                 q = q.replace(word, "")
             return q.strip() or question
 
-        # With history: ask Ollama to synthesize a visual search query
         chat = self._get_chat()
         history_text = "\n".join(
             f"  Q: {h['question']}\n  A: {h['answer']}" for h in self._history[-3:]
@@ -164,7 +147,6 @@ class AnalyticsRouter:
             return question
 
     def _search_captions(self, question: str) -> str:
-        """Search video frames for visual context matching the question."""
         try:
             from looking_glass.api.deps import get_search
             search = get_search()
@@ -182,20 +164,13 @@ class AnalyticsRouter:
             return ""
 
     def answer(self, question: str) -> str:
-        """Answer an analytics question."""
         q = question.lower()
         camera = self._extract_camera(q)
-
-        # Get tracking data from SQLite
         data_summary = self.counter.summary(camera)
-
-        # Search frame captions for visual/action context
         visual_context = self._search_captions(question)
 
         chat = self._get_chat()
         prompt = f"The user asked: '{question}'\n\n"
-
-        # Include recent conversation history for context
         if self._history:
             prompt += "Previous conversation:\n"
             for h in self._history[-3:]:
@@ -218,13 +193,12 @@ class AnalyticsRouter:
                 "You are a video surveillance analytics assistant. "
                 "Answer ONLY based on the tracking data and visual search results provided. "
                 "When captions mention colors, clothing, or descriptions, include them in your answer. "
-                "Never invent or hallucinate details not present in the data.",
+                "Never invent details not present in the data.",
                 prompt,
             )
         except Exception:
             answer = data_summary
 
-        # Save to history for follow-up questions
         self._history.append({"question": question, "answer": answer})
         if len(self._history) > 10:
             self._history = self._history[-10:]
@@ -233,7 +207,6 @@ class AnalyticsRouter:
 
     @staticmethod
     def _extract_camera(text: str) -> str | None:
-        """Extract camera ID from text."""
         match = re.search(r"cam(?:era)?\s*(\d+)", text)
         if match:
             return f"cam{match.group(1).zfill(2)}"

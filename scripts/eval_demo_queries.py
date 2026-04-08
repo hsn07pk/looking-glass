@@ -1,5 +1,3 @@
-"""Evaluate all demo queries against expected results."""
-
 from __future__ import annotations
 
 import sys

@@ -1,5 +1,3 @@
-"""Tests for the ingestion pipeline with mocks."""
-
 import numpy as np
 
 from looking_glass.sources.base import Frame

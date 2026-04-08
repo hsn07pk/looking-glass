@@ -1,5 +1,3 @@
-"""Health check / demo-smoke — verifies the core pipeline works."""
-
 from __future__ import annotations
 
 import sys

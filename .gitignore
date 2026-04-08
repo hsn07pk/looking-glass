@@ -30,3 +30,4 @@ LOGS/*.log
 
 # System detection output
 SYSTEM.json
+.DS_Store

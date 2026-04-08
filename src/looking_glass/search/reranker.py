@@ -1,5 +1,3 @@
-"""Reranker using Florence-2 grounding to verify search results."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,12 +10,10 @@ from looking_glass.search.nl_search import SearchResult
 
 @dataclass
 class Reranker:
-    """Rerank search results using Florence-2 grounded detection."""
 
     captioner: DenseCaptioner
 
     def rerank(self, results: list[SearchResult], query: str, top_k: int = 5) -> list[SearchResult]:
-        """Rerank results by grounding the query on each frame."""
         scored = []
         for r in results[:top_k * 2]:  # Check more than we need
             try:

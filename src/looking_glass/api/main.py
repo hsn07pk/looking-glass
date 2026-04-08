@@ -1,5 +1,3 @@
-"""FastAPI application factory for Looking Glass."""
-
 from __future__ import annotations
 
 from fastapi import FastAPI
@@ -12,14 +10,12 @@ from looking_glass.config import DATA_DIR
 
 
 def create_app() -> FastAPI:
-    """Create and configure the FastAPI application."""
     app = FastAPI(
         title="Looking Glass",
         description="Natural language video intelligence API",
         version="0.1.0",
     )
 
-    # CORS
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -28,14 +24,12 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Routes
     app.include_router(search.router, tags=["search"])
     app.include_router(alerts.router, tags=["alerts"])
     app.include_router(analytics.router, tags=["analytics"])
     app.include_router(cameras.router, tags=["cameras"])
     app.include_router(settings.router, tags=["settings"])
 
-    # Serve video files and frame images
     videos_dir = DATA_DIR / "videos" / "normalized"
     frames_dir = DATA_DIR / "frames"
     if videos_dir.exists():
