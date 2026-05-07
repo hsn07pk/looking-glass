@@ -1,0 +1,19 @@
+# Normalize all text files to LF in the repo, regardless of OS.
+# Prevents CRLF/LF churn when files move between Windows and macOS/Linux.
+* text=auto eol=lf
+
+# Explicit binary types — never touch these.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.mp4 binary
+*.mov binary
+*.webm binary
+*.onnx binary
+*.pt binary
+*.bin binary
