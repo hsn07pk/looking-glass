@@ -1,26 +1,20 @@
 clips:
-- camera_id: cam01
-  description: Street scene with orange construction truck
-  file: cam01_street_truck.mp4
-- camera_id: cam02
-  description: Indoor scene with bag on the floor
-  file: cam02_indoor_bag.mp4
-- camera_id: cam03
-  description: Office scene with two people shaking hands
-  file: cam03_office_handshake.mp4
-- camera_id: cam04
-  description: Lobby with people walking through
-  file: cam04_lobby_traffic.mp4
-- camera_id: cam05
-  description: Person taking a photo with a phone
-  file: cam05_tourist_photo.mp4
-- camera_id: cam06
-  description: Red car at an intersection
-  file: cam06_intersection_car.mp4
-- camera_id: cam07
-  description: Person wearing a yellow jacket in a crowd
-  file: cam07_crowd_jacket.mp4
-- camera_id: cam08
-  description: Package on a doorstep
-  file: cam08_doorstep_package.mp4
-count: 8
+- camera_id: drone01
+  description: Drone aerial footage 1
+  file: drone01.mp4
+- camera_id: drone02
+  description: Drone aerial footage 2
+  file: drone02.mp4
+- camera_id: drone03
+  description: Drone aerial footage 3
+  file: drone03.mp4
+- camera_id: drone04
+  description: Drone aerial footage 4
+  file: drone04.mp4
+- camera_id: drone05
+  description: Drone aerial footage 5
+  file: drone05.mp4
+- camera_id: drone06
+  description: Drone aerial footage 6
+  file: drone06.mp4
+count: 6

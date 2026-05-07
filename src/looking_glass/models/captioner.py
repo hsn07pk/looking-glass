@@ -56,11 +56,12 @@ class DenseCaptioner:
         inputs = self._processor(text=prompt, images=image, return_tensors="pt")
         inputs = {k: v.to(self._device) for k, v in inputs.items()}
 
-        with torch.no_grad():
+        with torch.inference_mode():
             generated_ids = self._model.generate(
                 **inputs,
-                max_new_tokens=1024,
-                num_beams=3,
+                max_new_tokens=256,
+                num_beams=1,
+                do_sample=False,
                 use_cache=False,
             )
 
@@ -91,18 +92,19 @@ class DenseCaptioner:
         return result.get("<MORE_DETAILED_CAPTION>", "")
 
     def exhaustive_caption(self, image: npt.NDArray[np.uint8]) -> str:
-        """Exhaustive caption via minicpm-v, falls back to Florence-2."""
+        # Florence-2 dense caption is ~50× faster than minicpm-v per frame and
+        # produces good enough captions for the searchable text. minicpm-v
+        # remains available for chat/analytics at query time.
+        return self.dense_caption(image)
+
+    def exhaustive_caption_vlm(self, image: npt.NDArray[np.uint8]) -> str:
+        """Slow path: minicpm-v VLM. Use only when you actually need it."""
         import cv2
         import ollama
 
-        # Save frame to temp file for Ollama
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
             tmp_path = f.name
-            # Convert BGR to RGB for saving
-            if image.ndim == 3 and image.shape[2] == 3:
-                cv2.imwrite(tmp_path, image)
-            else:
-                cv2.imwrite(tmp_path, image)
+            cv2.imwrite(tmp_path, image)
 
         try:
             response = ollama.chat(
@@ -116,7 +118,6 @@ class DenseCaptioner:
             )
             return response.message.content
         except Exception:
-            # Fallback to Florence-2 MORE_DETAILED_CAPTION
             return self.dense_caption(image)
         finally:
             Path(tmp_path).unlink(missing_ok=True)

@@ -1,0 +1,10 @@
+{
+  "status": "done",
+  "clip": "drone02.mp4",
+  "frames_sampled": 26,
+  "frames_total": 26,
+  "detections": 12,
+  "tracks": 2,
+  "elapsed_sec": 32.2,
+  "completed_at": 1778151242.071069
+}

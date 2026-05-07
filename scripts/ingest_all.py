@@ -85,7 +85,7 @@ def main() -> None:
         })
 
         try:
-            source = FileVideoSource(clip, sample_fps=2.0)
+            source = FileVideoSource(clip, sample_fps=1.5)
             frames = source.frames()
 
             clip_start = time.time()

@@ -24,6 +24,9 @@ class Tracker(Protocol):
 
 class Embedder(Protocol):
     def encode_image(self, image: npt.NDArray[np.uint8]) -> npt.NDArray[np.float32]: ...
+    def encode_images(
+        self, images: list[npt.NDArray[np.uint8]]
+    ) -> npt.NDArray[np.float32]: ...
     def encode_text(self, text: str) -> npt.NDArray[np.float32]: ...
     def dim(self) -> int: ...
 
@@ -162,25 +165,8 @@ class IngestionPipeline:
                     ),
                 )
 
-            short_cap = self.captioner.caption(frame.image)
             cap = self.captioner.exhaustive_caption(frame.image)
             stats["captions"] += 1
-
-            grounded_dets: list[dict] = []
-            if short_cap:
-                try:
-                    raw_gd = self.captioner.grounded_detection(frame.image, short_cap)
-                    grounded_dets = [
-                        {
-                            "bbox": list(g["bbox"]),
-                            "class_name": g.get("label", ""),
-                            "score": 1.0,  # grounded detections don't have confidence
-                        }
-                        for g in raw_gd
-                        if g.get("bbox")
-                    ]
-                except Exception:
-                    pass
 
             all_detections = [
                 {
@@ -190,9 +176,25 @@ class IngestionPipeline:
                     "track_id": t.get("track_id"),
                 }
                 for t in tracked
-            ] + grounded_dets
+            ]
 
-            frame_vec = self.embedder.encode_image(frame.image)
+            crops: list[npt.NDArray[np.uint8]] = []
+            crop_meta: list[dict] = []
+            h, w = frame.image.shape[:2]
+            for t in tracked:
+                bbox = t.get("bbox", (0, 0, 0, 0))
+                x1, y1, x2, y2 = [int(c) for c in bbox]
+                x1, y1 = max(0, x1), max(0, y1)
+                x2, y2 = min(w, x2), min(h, y2)
+                if x2 > x1 and y2 > y1:
+                    crops.append(frame.image[y1:y2, x1:x2])
+                    crop_meta.append({"bbox": list(bbox), "track": t})
+
+            batch_images = [frame.image] + crops
+            batch_vecs = self.embedder.encode_images(batch_images)
+            frame_vec = batch_vecs[0]
+            crop_vecs = batch_vecs[1:]
+
             self.store.upsert_frame(frame_id, frame_vec, {
                 "camera_id": camera_id,
                 "timestamp": frame.timestamp,
@@ -202,24 +204,17 @@ class IngestionPipeline:
                 "detections": json.dumps(all_detections),
             })
 
-            for t in tracked:
-                bbox = t.get("bbox", (0, 0, 0, 0))
-                x1, y1, x2, y2 = [int(c) for c in bbox]
-                h, w = frame.image.shape[:2]
-                x1, y1 = max(0, x1), max(0, y1)
-                x2, y2 = min(w, x2), min(h, y2)
-                if x2 > x1 and y2 > y1:
-                    crop = frame.image[y1:y2, x1:x2]
-                    crop_vec = self.embedder.encode_image(crop)
-                    crop_id = f"{frame_id}_t{t.get('track_id', 0)}"
-                    self.store.upsert_crop(crop_id, crop_vec, {
-                        "camera_id": camera_id,
-                        "timestamp": frame.timestamp,
-                        "frame_path": str(frame_path),
-                        "bbox": list(bbox),
-                        "class_name": t.get("class_name", ""),
-                        "track_id": t.get("track_id", 0),
-                    })
+            for crop_vec, meta in zip(crop_vecs, crop_meta, strict=True):
+                t = meta["track"]
+                crop_id = f"{frame_id}_t{t.get('track_id', 0)}"
+                self.store.upsert_crop(crop_id, crop_vec, {
+                    "camera_id": camera_id,
+                    "timestamp": frame.timestamp,
+                    "frame_path": str(frame_path),
+                    "bbox": meta["bbox"],
+                    "class_name": t.get("class_name", ""),
+                    "track_id": t.get("track_id", 0),
+                })
 
         conn.commit()
         conn.close()

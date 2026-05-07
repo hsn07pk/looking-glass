@@ -53,22 +53,30 @@ class FrameEmbedder:
             self._logit_bias = float(model.logit_bias.item())
 
     def encode_image(self, image: npt.NDArray[np.uint8]) -> npt.NDArray[np.float32]:
+        return self.encode_images([image])[0]
+
+    def encode_images(
+        self, images: list[npt.NDArray[np.uint8]]
+    ) -> npt.NDArray[np.float32]:
         assert self._model is not None
         assert self._preprocess is not None
+        if not images:
+            return np.zeros((0, self._dim), dtype=np.float32)
 
-        # BGR -> PIL RGB
-        if image.ndim == 3 and image.shape[2] == 3:
-            pil_img = Image.fromarray(image[:, :, ::-1])
-        else:
-            pil_img = Image.fromarray(image)
+        tensors = []
+        for image in images:
+            if image.ndim == 3 and image.shape[2] == 3:
+                pil_img = Image.fromarray(image[:, :, ::-1])
+            else:
+                pil_img = Image.fromarray(image)
+            tensors.append(self._preprocess(pil_img))  # type: ignore[union-attr]
+        batch = torch.stack(tensors).to(self._device)
 
-        tensor = self._preprocess(pil_img).unsqueeze(0).to(self._device)  # type: ignore[union-attr]
-
-        with torch.no_grad():
-            features = self._model.encode_image(tensor)
+        with torch.inference_mode():
+            features = self._model.encode_image(batch)
             features = F.normalize(features, dim=-1)
 
-        return features[0].cpu().numpy().astype(np.float32)
+        return features.cpu().numpy().astype(np.float32)
 
     def encode_text(self, text: str) -> npt.NDArray[np.float32]:
         assert self._model is not None
