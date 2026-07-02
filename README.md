@@ -17,8 +17,8 @@ Runs 100% offline. No API keys, no cloud. All models run locally via Ollama and 
 ## Quick start
 
 ```bash
-git clone https://github.com/hsn07pk/spring-engineering.git
-cd spring-engineering
+git clone https://github.com/hsn07pk/looking-glass.git
+cd looking-glass
 make setup
 make download-models
 make ingest
@@ -27,10 +27,10 @@ make demo
 
 Then open **http://localhost:5173** and try:
 
-- `"orange construction truck"` — finds the truck on cam01
-- `"bag left unattended"` — highlights the bag on cam02
-- `"person taking a photo"` — locates the tourist on cam05
-- `"how many people in the lobby today"` — analytics via the chat panel
+- `"orange construction truck"` finds the truck on cam01
+- `"bag left unattended"` highlights the bag on cam02
+- `"person taking a photo"` locates the tourist on cam05
+- `"how many people in the lobby today"` runs analytics via the chat panel
 
 ## Architecture
 
@@ -76,7 +76,3 @@ demo/           # presentation files
 | Backend | FastAPI + uvicorn |
 | Frontend | React + Vite + Tailwind CSS |
 | Package mgmt | uv (Python), pnpm (JS) |
-
-## License
-
-MIT
